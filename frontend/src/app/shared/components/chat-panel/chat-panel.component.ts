@@ -192,6 +192,7 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
       }
 
       .extraction-text {
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
