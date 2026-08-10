@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ChatPanelComponent } from '../../../shared/components/chat-panel/chat-panel.component';
 import { AreaTrackerComponent } from './area-tracker/area-tracker.component';
+import { AreaListComponent } from './area-tracker/area-list.component';
 import { LogisticsService } from '../../../core/logistics/logistics.service';
 import { InboxService } from '../../../core/inbox/inbox.service';
 import { FlowService } from '../../../core/flow/flow.service';
@@ -13,7 +14,7 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
 
 @Component({
     selector: 'app-logistics-step',
-    imports: [ChatPanelComponent, AreaTrackerComponent, RouterLink],
+    imports: [ChatPanelComponent, AreaTrackerComponent, AreaListComponent, RouterLink],
     template: `
     <span class="eyebrow">Tell Your Story · Goals &amp; Logistics</span>
     <h1>Goals &amp; logistics</h1>
@@ -65,60 +66,82 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
 
     @if (committed()) {
       @if (infoAreas().length) {
-        <span class="eyebrow tracker-label">What we're gathering</span>
-        <app-area-tracker [areas]="infoAreas()" [data]="trackerData()" />
-      }
+        <div class="desktop-tracker">
+          <span class="eyebrow tracker-label">What we're gathering</span>
+          <app-area-tracker [areas]="infoAreas()" [data]="trackerData()" />
+        </div>
 
-      <div class="conversation-header">
-        <span class="stamp" [class.stamp-brass]="channel() === 'app'" [class.stamp-muted]="channel() === 'email'">
-          {{ channel() === 'app' ? 'Live chat' : 'By email' }}
-        </span>
-        <button type="button" class="btn btn-ghost" (click)="openPicker()">Switch channel</button>
-      </div>
-
-      @if (channel() === 'app') {
-        <div class="chat-frame card">
-          <app-chat-panel
-            step="logistics"
-            [infoAreas]="infoAreas()"
-            (completeChange)="onAppComplete()"
-            (assistantReplied)="refreshKnownData()"
-          >
-            <a doneAction class="btn btn-secondary" [routerLink]="nextRoute">Continue to your stories</a>
-          </app-chat-panel>
+        <!-- Mobile only (see .mobile-tabs media query) — the glyph row above costs too much
+             vertical space to keep on-screen alongside the chat on a small viewport, so it's
+             replaced by a tab switcher: the same info lives one tap away instead of always-on. -->
+        <div class="mobile-tabs">
+          <button type="button" class="tab-btn" [class.tab-btn-active]="activeTab() === 'chat'" (click)="activeTab.set('chat')">
+            Chat
+          </button>
+          <button type="button" class="tab-btn" [class.tab-btn-active]="activeTab() === 'goals'" (click)="activeTab.set('goals')">
+            Goals
+          </button>
         </div>
       }
 
-      @if (channel() === 'email') {
-        <div class="chat-frame card email-thread">
-          <div class="thread">
-            @for (message of inbox()?.messages ?? []; track message.id) {
-              <div class="chat-bubble" [class.from-user]="message.role === 'user'" [class.from-assistant]="message.role === 'assistant'">
-                {{ message.content }}
+      <div class="chat-section" [class.mobile-hide]="infoAreas().length > 0 && activeTab() === 'goals'">
+        <div class="conversation-header">
+          <span class="stamp" [class.stamp-brass]="channel() === 'app'" [class.stamp-muted]="channel() === 'email'">
+            {{ channel() === 'app' ? 'Live chat' : 'By email' }}
+          </span>
+          <button type="button" class="btn btn-ghost" (click)="openPicker()">Switch channel</button>
+        </div>
+
+        @if (channel() === 'app') {
+          <div class="chat-frame card">
+            <app-chat-panel
+              step="logistics"
+              [infoAreas]="infoAreas()"
+              (completeChange)="onAppComplete()"
+              (assistantReplied)="refreshKnownData()"
+            >
+              <a doneAction class="btn btn-secondary" [routerLink]="nextRoute">Continue to your stories</a>
+            </app-chat-panel>
+          </div>
+        }
+
+        @if (channel() === 'email') {
+          <div class="chat-frame card email-thread">
+            <div class="thread">
+              @for (message of inbox()?.messages ?? []; track message.id) {
+                <div class="chat-bubble" [class.from-user]="message.role === 'user'" [class.from-assistant]="message.role === 'assistant'">
+                  {{ message.content }}
+                </div>
+              }
+              @if (!inbox()?.messages?.length) {
+                <p class="meta">Sending your first question by email…</p>
+              }
+            </div>
+
+            @if (inbox()?.thread?.status === 'complete') {
+              <div class="completed-banner">
+                <span class="stamp stamp-brass">Step complete</span>
+                <a class="btn btn-secondary" [routerLink]="nextRoute">Continue to your stories</a>
+              </div>
+            } @else {
+              <div class="email-waiting">
+                <span class="stamp stamp-muted">Waiting on your reply</span>
+                @if (inbox()?.needsNudge) {
+                  <button type="button" class="btn btn-ghost" (click)="requestNudge()">Send a reminder</button>
+                }
+                <p class="meta">
+                  Check your inbox and reply whenever works — we'll pick this back up automatically
+                  the next time you're here.
+                </p>
               </div>
             }
-            @if (!inbox()?.messages?.length) {
-              <p class="meta">Sending your first question by email…</p>
-            }
           </div>
+        }
+      </div>
 
-          @if (inbox()?.thread?.status === 'complete') {
-            <div class="completed-banner">
-              <span class="stamp stamp-brass">Step complete</span>
-              <a class="btn btn-secondary" [routerLink]="nextRoute">Continue to your stories</a>
-            </div>
-          } @else {
-            <div class="email-waiting">
-              <span class="stamp stamp-muted">Waiting on your reply</span>
-              @if (inbox()?.needsNudge) {
-                <button type="button" class="btn btn-ghost" (click)="requestNudge()">Send a reminder</button>
-              }
-              <p class="meta">
-                Check your inbox and reply whenever works — we'll pick this back up automatically
-                the next time you're here.
-              </p>
-            </div>
-          }
+      @if (infoAreas().length) {
+        <div class="mobile-goals" [class.mobile-goals-active]="activeTab() === 'goals'">
+          <app-area-list [areas]="infoAreas()" [data]="trackerData()" />
         </div>
       }
     }
@@ -188,6 +211,41 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
         margin-top: 1.75rem;
       }
 
+      // Wraps the channel header + whichever chat surface is active so the pair can share one
+      // flex:1 budget within .page-col — see onboarding-shell's .page-col for the height chain
+      // this depends on. Also the unit that gets hidden behind the "Chat" mobile tab.
+      .chat-section {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .mobile-tabs,
+      .mobile-goals {
+        display: none;
+      }
+
+      .tab-btn {
+        flex: 1;
+        padding: 0.55em 1em;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+        background: #fff;
+        color: var(--ink-soft);
+        font-family: var(--font-display);
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+      }
+
+      .tab-btn-active {
+        background: var(--brass);
+        border-color: var(--brass-strong);
+        color: var(--ink);
+      }
+
       .conversation-header {
         display: flex;
         align-items: center;
@@ -244,6 +302,33 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
         .choice-grid {
           grid-template-columns: 1fr;
         }
+
+        // Below the breakpoint the always-on glyph row costs too much of the limited vertical
+        // space, so it's swapped for a Chat/Goals tab switcher — see the template comment above
+        // .mobile-tabs. Above the breakpoint, .mobile-tabs/.mobile-goals stay display:none and
+        // .desktop-tracker/.chat-section are the whole story, same as before this feature.
+        .desktop-tracker {
+          display: none;
+        }
+
+        .mobile-tabs {
+          display: flex;
+          gap: 0.6rem;
+          margin-top: 1.5rem;
+        }
+
+        .chat-section.mobile-hide {
+          display: none;
+        }
+
+        .mobile-goals.mobile-goals-active {
+          display: block;
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+          margin-top: 1.5rem;
+          padding-right: 0.25rem;
+        }
       }
     `
     ]
@@ -274,6 +359,9 @@ export class LogisticsStepComponent implements OnInit {
   resumeFilled = signal(false);
   trackerData = computed(() => (this.resumeFilled() ? { ...this.knownData(), resumeBackground: true } : this.knownData()));
   nextRoute = STEP_ROUTES['deep_prompts'];
+  // Mobile-only Chat/Goals switcher — see .mobile-tabs. Irrelevant (and its markup CSS-hidden)
+  // above the mobile breakpoint, where .desktop-tracker + .chat-section show both at once.
+  activeTab = signal<'chat' | 'goals'>('chat');
 
   constructor(
     private logisticsService: LogisticsService,

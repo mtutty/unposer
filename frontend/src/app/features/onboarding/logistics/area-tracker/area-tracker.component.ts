@@ -1,6 +1,7 @@
-import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, HostListener, Input, signal, ChangeDetectionStrategy } from '@angular/core';
 import { InfoArea } from '../../../../models/flow.model';
 import { AreaGlyphComponent } from '../../../../shared/components/area-glyph/area-glyph.component';
+import { AreaListComponent } from './area-list.component';
 import { truncateWords } from '../../../../shared/utils/text';
 
 /**
@@ -9,35 +10,104 @@ import { truncateWords } from '../../../../shared/utils/text';
  * themselves). Each area fills in visually once `data` has a non-empty value for its id, turning
  * the somewhat-random order topics land in during free-form conversation into a visible
  * checklist — the "gamify completion" ask.
+ *
+ * Desktop-only (see LogisticsStepComponent, which hides this behind a media query on mobile in
+ * favor of the "Goals" tab): clicking anywhere on the row — a glyph or the row itself — toggles a
+ * dropdown with the full AreaListComponent read, so the compact row and the full explanation are
+ * one click apart rather than tooltip-hover-only.
  */
 @Component({
     selector: 'app-area-tracker',
-    imports: [AreaGlyphComponent],
+    imports: [AreaGlyphComponent, AreaListComponent],
     template: `
-    <ul class="area-tracker" aria-label="Information we're gathering">
-      @for (area of areas; track area.id) {
-        @let filled = isFilled(area.id);
-        <li class="area-chip" [class.area-filled]="filled" tabindex="0">
-          <span class="area-glyph" aria-hidden="true">
-            <app-area-glyph [areaId]="area.id" />
-          </span>
-          <span class="area-tooltip" role="tooltip">
-            <strong>{{ area.label }}</strong>
-            <span>{{ area.description }}</span>
-            @if (summaryFor(area); as summary) {
-              <span class="area-tooltip-summary">{{ summary }}</span>
-            }
-          </span>
-        </li>
+    <div class="area-tracker-wrap">
+      <div
+        class="area-tracker-header"
+        role="button"
+        tabindex="0"
+        [attr.aria-expanded]="expanded()"
+        aria-label="Show details for what we're gathering"
+        (click)="toggle()"
+        (keydown.enter)="toggle()"
+        (keydown.space)="onSpace($event)"
+      >
+        <ul class="area-tracker" aria-hidden="true">
+          @for (area of areas; track area.id) {
+            @let filled = isFilled(area.id);
+            <li class="area-chip" [class.area-filled]="filled">
+              <span class="area-glyph">
+                <app-area-glyph [areaId]="area.id" />
+              </span>
+              <span class="area-tooltip" role="tooltip">
+                <strong>{{ area.label }}</strong>
+                <span>{{ area.description }}</span>
+                @if (summaryFor(area); as summary) {
+                  <span class="area-tooltip-summary">{{ summary }}</span>
+                }
+              </span>
+            </li>
+          }
+        </ul>
+        <svg
+          class="chevron"
+          [class.chevron-open]="expanded()"
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+      </div>
+
+      @if (expanded()) {
+        <div class="area-tracker-panel card">
+          <app-area-list [areas]="areas" [data]="data" />
+        </div>
       }
-    </ul>
+    </div>
   `,
     changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
+      .area-tracker-wrap {
+        position: relative;
+      }
+
+      .area-tracker-header {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.5rem 0.7rem 0.5rem 0.4rem;
+        margin: 0 0 0 -0.4rem;
+        border-radius: var(--radius-lg);
+        cursor: pointer;
+        transition: background 0.15s ease;
+
+        &:hover,
+        &:focus-visible {
+          background: var(--page-2);
+        }
+      }
+
+      .chevron {
+        color: var(--pencil);
+        flex-shrink: 0;
+        transition: transform 0.2s ease;
+      }
+
+      .chevron-open {
+        transform: rotate(180deg);
+      }
+
       .area-tracker {
         list-style: none;
-        margin: 1.25rem 0 0;
+        margin: 0;
         padding: 0;
         display: flex;
         flex-wrap: wrap;
@@ -110,10 +180,20 @@ import { truncateWords } from '../../../../shared/utils/text';
         font-style: italic;
       }
 
-      .area-chip:hover .area-tooltip,
-      .area-chip:focus-visible .area-tooltip {
+      // Keyboard users get the fully-expanded, always-legible AreaList via the header's own
+      // Enter/Space toggle instead of tabbing chip-by-chip for a hover-only tooltip.
+      .area-chip:hover .area-tooltip {
         opacity: 1;
         transform: translateX(-50%) translateY(0);
+      }
+
+      .area-tracker-panel {
+        position: absolute;
+        top: calc(100% + 0.5rem);
+        left: -0.4rem;
+        width: min(26rem, 90vw);
+        padding: 1.25rem 1.4rem;
+        z-index: 6;
       }
     `
     ]
@@ -121,6 +201,10 @@ import { truncateWords } from '../../../../shared/utils/text';
 export class AreaTrackerComponent {
   @Input() areas: InfoArea[] = [];
   @Input() data: Record<string, any> = {};
+
+  expanded = signal(false);
+
+  constructor(private el: ElementRef<HTMLElement>) {}
 
   isFilled(id: string): boolean {
     const value = this.data?.[id];
@@ -133,5 +217,27 @@ export class AreaTrackerComponent {
   summaryFor(area: InfoArea): string | null {
     if ((area.source ?? 'chat') !== 'chat') return null;
     return truncateWords(this.data?.[area.id]);
+  }
+
+  toggle(): void {
+    this.expanded.update((v) => !v);
+  }
+
+  onSpace(event: Event): void {
+    event.preventDefault(); // stop the page from scrolling on Space
+    this.toggle();
+  }
+
+  /** Collapses the dropdown on an outside click, same affordance as any other popover. */
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    if (this.expanded() && !this.el.nativeElement.contains(event.target as Node)) {
+      this.expanded.set(false);
+    }
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    this.expanded.set(false);
   }
 }
