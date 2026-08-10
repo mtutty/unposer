@@ -1,0 +1,33 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies — backend/ and frontend/ each have their own .gitignore too; these are a
+# blanket safety net in case a package ever gets installed at the repo root.
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+.angular/
+**/.angular/
+
+# Candidate-uploaded resume files (backend/uploads is bind-mounted for local storage in dev;
+# backend/.gitignore also excludes it — kept here too since it holds real user file uploads).
+backend/uploads/*
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Claude Code local settings — personal permission overrides for this machine, not shared
+# project config.
+.claude/settings.local.json

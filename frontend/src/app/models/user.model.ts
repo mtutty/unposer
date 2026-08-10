@@ -1,0 +1,7 @@
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  avatar_url?: string;
+  oidc_provider: string;
+}

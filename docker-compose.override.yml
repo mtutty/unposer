@@ -1,0 +1,26 @@
+# Development overrides
+# Automatically loaded by docker-compose
+# Use this for local development with hot-reload
+services:
+  nginx:
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    ports:
+      - "4200:4200"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: ["npm", "start", "--", "--host", "0.0.0.0", "--poll", "2000", "--proxy-config", "proxy.conf.json"]
+
+  api:
+    ports:
+      - "3000:3000"
+
+  postgres:
+    ports:
+      - "5432:5432"
