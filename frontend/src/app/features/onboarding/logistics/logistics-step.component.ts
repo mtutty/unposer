@@ -78,7 +78,12 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
 
       @if (channel() === 'app') {
         <div class="chat-frame card">
-          <app-chat-panel step="logistics" (completeChange)="onAppComplete()" (assistantReplied)="refreshKnownData()">
+          <app-chat-panel
+            step="logistics"
+            [infoAreas]="infoAreas()"
+            (completeChange)="onAppComplete()"
+            (assistantReplied)="refreshKnownData()"
+          >
             <a doneAction class="btn btn-secondary" [routerLink]="nextRoute">Continue to your stories</a>
           </app-chat-panel>
         </div>

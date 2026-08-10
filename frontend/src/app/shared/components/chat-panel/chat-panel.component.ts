@@ -5,35 +5,69 @@ import { Subscription } from 'rxjs';
 import { WebSocketService } from '../../../core/websocket/websocket.service';
 import { FlowService } from '../../../core/flow/flow.service';
 import { Message } from '../../../models/conversation.model';
+import { InfoArea } from '../../../models/flow.model';
+import { AreaGlyphComponent } from '../area-glyph/area-glyph.component';
+import { truncateWords } from '../../utils/text';
 
 interface DisplayMessage {
+  kind: 'message';
   id: string;
   role: 'user' | 'assistant';
   content: string;
   pending?: boolean;
 }
 
+/** One area's takeaway from a single turn, resolved against the step's known infoAreas. */
+interface ExtractionEntry {
+  area: InfoArea;
+  summary: string;
+}
+
+/**
+ * A secondary, "thought process"-style log line rendered right before the assistant reply that
+ * produced it — surfaces what got extracted that turn without it living inside the main
+ * conversation bubble. Only emitted for steps with a known infoAreas list (currently logistics —
+ * see ChatPanelComponent.infoAreas) and only for keys that match one of those areas, so freeform
+ * extraction on steps without glyphs (deep_prompts) stays silent rather than noisy.
+ */
+interface ExtractionLogItem {
+  kind: 'extraction';
+  id: string;
+  entries: ExtractionEntry[];
+}
+
+type ThreadItem = DisplayMessage | ExtractionLogItem;
+
 /** Live-chat UI shared by the Step 3 (app channel) and Step 5 deep-prompt conversations. */
 @Component({
     selector: 'app-chat-panel',
-    imports: [FormsModule],
+    imports: [FormsModule, AreaGlyphComponent],
     template: `
     <div class="chat">
       <div class="thread" #threadEl>
         @if (connecting()) {
           <p class="meta status-line">Connecting…</p>
         }
-        @for (message of messages(); track message.id) {
-          @let old = isOld(message);
-          @let expanded = expandedIds().has(message.id);
-          <div class="chat-bubble" [class.from-user]="message.role === 'user'" [class.from-assistant]="message.role === 'assistant'">
-            <div class="bubble-text" [class.clamped]="old && !expanded">{{ message.content }}</div>
-            @if (old) {
-              <button type="button" class="expand-toggle" (click)="toggleExpand(message.id)">
-                {{ expanded ? 'Show less' : 'Show more' }}
-              </button>
-            }
-          </div>
+        @for (item of items(); track item.id) {
+          @if (item.kind === 'extraction') {
+            <div class="extraction-log">
+              @for (entry of item.entries; track entry.area.id) {
+                <app-area-glyph [areaId]="entry.area.id" [size]="16" class="extraction-glyph" />
+              }
+              <span class="extraction-text">{{ extractionText(item) }}</span>
+            </div>
+          } @else {
+            @let old = isOld(item);
+            @let expanded = expandedIds().has(item.id);
+            <div class="chat-bubble" [class.from-user]="item.role === 'user'" [class.from-assistant]="item.role === 'assistant'">
+              <div class="bubble-text" [class.clamped]="old && !expanded">{{ item.content }}</div>
+              @if (old) {
+                <button type="button" class="expand-toggle" (click)="toggleExpand(item.id)">
+                  {{ expanded ? 'Show less' : 'Show more' }}
+                </button>
+              }
+            </div>
+          }
         }
         @if (thinking()) {
           <div class="chat-bubble from-assistant thinking">
@@ -139,6 +173,30 @@ interface DisplayMessage {
         }
       }
 
+      // The "thought process" log line — deliberately smaller and unbordered so it reads as a
+      // trace of what the AI noticed, not another conversation bubble.
+      .extraction-log {
+        display: flex;
+        align-items: center;
+        gap: 0.4em;
+        margin: -0.35rem 0.25rem 0;
+        padding: 0.1em 0;
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--pencil);
+      }
+
+      .extraction-glyph {
+        flex-shrink: 0;
+        color: var(--brass-strong);
+      }
+
+      .extraction-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       // Clamps every message except each role's latest to 3 lines, so a long thread stays scannable
       // — the full text is one click away rather than gone.
       .bubble-text.clamped {
@@ -207,13 +265,18 @@ interface DisplayMessage {
 })
 export class ChatPanelComponent implements OnInit, OnDestroy {
   @Input({ required: true }) step!: 'logistics' | 'deep_prompts';
+  /** Named info areas this step tracks (logistics only — see LogisticsStepComponent). Drives
+   *  which extracted keys get a glyph + surfaced as an extraction-log line; steps without a list
+   *  (deep_prompts) simply never show one, since freeform extraction there has no fixed vocabulary
+   *  to render a glyph for. */
+  @Input() infoAreas: InfoArea[] = [];
   @Output() completeChange = new EventEmitter<boolean>();
   /** Fires whenever a new assistant message arrives — lets a parent (e.g. the logistics step's
    *  area tracker) know it's a good time to re-fetch whatever got extracted this turn. */
   @Output() assistantReplied = new EventEmitter<void>();
   @ViewChild('threadEl') threadEl?: ElementRef<HTMLDivElement>;
 
-  messages = signal<DisplayMessage[]>([]);
+  items = signal<ThreadItem[]>([]);
   connecting = signal(true);
   thinking = signal(false);
   completed = signal(false);
@@ -236,7 +299,13 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
 
       this.ws.on('chat:message').subscribe((payload: Message) => {
         this.thinking.set(false);
-        this.messages.update((list) => [...list, { id: payload.id, role: payload.role as 'user' | 'assistant', content: payload.content }]);
+
+        const entries = payload.role === 'assistant' ? this.resolveExtractionEntries(payload.metadata) : [];
+        this.items.update((list) => {
+          const next = entries.length ? [...list, { kind: 'extraction' as const, id: `extract-${payload.id}`, entries }] : list;
+          return [...next, { kind: 'message' as const, id: payload.id, role: payload.role as 'user' | 'assistant', content: payload.content }];
+        });
+
         this.scrollToBottom();
         if (payload.role === 'assistant') this.assistantReplied.emit();
       }),
@@ -262,11 +331,12 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
 
   /** True for any message other than the latest one from its own role — those are the ones that
    *  get clamped to 3 lines, since the newest exchange (one bubble per side) is what's actively
-   *  being read. */
+   *  being read. Extraction-log items are skipped when walking backward — they don't have a role. */
   isOld(message: DisplayMessage): boolean {
-    const list = this.messages();
+    const list = this.items();
     for (let i = list.length - 1; i >= 0; i--) {
-      if (list[i].role === message.role) return list[i].id !== message.id;
+      const item = list[i];
+      if (item.kind === 'message' && item.role === message.role) return item.id !== message.id;
     }
     return false;
   }
@@ -278,6 +348,29 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
       else next.add(id);
       return next;
     });
+  }
+
+  /** A single-line takeaway across all areas an extraction turn touched, e.g. "Target Role &
+   *  Industry: senior PM roles in fintech · Compensation: $140–160k base". */
+  extractionText(item: ExtractionLogItem): string {
+    return item.entries.map((entry) => `${entry.area.label}: ${entry.summary}`).join(' · ');
+  }
+
+  /** Resolves a turn's raw `extracted`/metadata object down to the entries worth logging — only
+   *  keys that match a known infoArea id get a glyph and a line; anything else (freeform keys on
+   *  steps without a fixed area list, or areas with an empty value) is silently dropped. */
+  private resolveExtractionEntries(metadata: Record<string, any> | undefined): ExtractionEntry[] {
+    if (!metadata || !this.infoAreas.length) return [];
+
+    // 'resume'-sourced areas (e.g. logistics's "Background" glyph) are never chat-extracted — see
+    // ConversationService.chatExtractionAreas — so they're excluded here for the same reason.
+    return this.infoAreas
+      .filter((area) => (area.source ?? 'chat') === 'chat')
+      .reduce<ExtractionEntry[]>((entries, area) => {
+        const summary = truncateWords(metadata[area.id]);
+        if (summary) entries.push({ area, summary });
+        return entries;
+      }, []);
   }
 
   onEnter(event: Event): void {
@@ -292,7 +385,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
     const content = this.draft.trim();
     if (!content) return;
 
-    this.messages.update((list) => [...list, { id: `local-${Date.now()}`, role: 'user', content }]);
+    this.items.update((list) => [...list, { kind: 'message', id: `local-${Date.now()}`, role: 'user', content }]);
     this.draft = '';
     this.errorMessage.set('');
     this.thinking.set(true);
