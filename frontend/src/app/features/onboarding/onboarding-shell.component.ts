@@ -38,7 +38,13 @@ import { FlowService } from '../../core/flow/flow.service';
         margin: 1.5rem 0 0;
         padding: 2.5rem clamp(1.5rem, 4vw, 3.5rem);
         box-shadow: var(--shadow-cover);
-        min-height: calc(100vh - 64px - 1.5rem);
+        // A definite (not just minimum) height, so a step with a growing chat thread can hand its
+        // scrollable child a real bound to fill and shrink within — see chat-panel's :host, which
+        // relies on this chain to keep .thread as the only thing that scrolls. overflow-y is the
+        // fallback for step content that's simply taller than the viewport and has no internal
+        // scroll region of its own (e.g. a long profile) — it scrolls here instead of growing body.
+        height: calc(100vh - 64px - 1.5rem);
+        overflow-y: auto;
         display: flex;
         flex-direction: column;
       }
