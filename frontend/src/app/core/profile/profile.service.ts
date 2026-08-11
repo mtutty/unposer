@@ -26,4 +26,15 @@ export class ProfileService {
   approve() {
     return this.api.post<{ profile: CandidateProfile; progress: any }>('/profile/approve', {});
   }
+
+  /**
+   * Step 7 -> Step 6 feedback loop: regenerates the profile from every currently-flagged sandbox
+   * gap at once. Reachable both from the sandbox chat (sandbox.component.ts) and from the profile
+   * page's "Open questions from your practice interview" section (profile-review.component.ts) —
+   * same action, same endpoint, wherever the candidate notices the open questions first. No
+   * approval gate on the result — see ProfileService.applyGapCorrections (backend).
+   */
+  applyCorrections() {
+    return this.api.post<{ profile: CandidateProfile; appliedCount: number }>('/profile/apply-corrections', {});
+  }
 }

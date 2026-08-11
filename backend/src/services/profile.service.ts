@@ -1,6 +1,6 @@
 import { db } from '../db/connection';
 import { AppError, CandidateProfile, ProfileInsight } from '../types';
-import { generateCandidateProfile } from '../ai/profile-generator.chain';
+import { generateCandidateProfile, ProfileGenerationInput } from '../ai/profile-generator.chain';
 import { generateReaskQuestion } from '../ai/reask.chain';
 import { ConversationService } from './conversation.service';
 
@@ -11,7 +11,19 @@ export class ProfileService {
     return (await db('candidate_profiles').where({ user_id: userId }).first()) || null;
   }
 
-  async generateProfile(userId: string): Promise<CandidateProfile> {
+  /**
+   * Loads resume/logistics/deep-prompt transcript and runs the profile-generator chain — the one
+   * "synthesize the profile" code path shared by an initial `generateProfile` (status stays
+   * `pending_review`, needs a first approval) and `applyGapCorrections` below, which passes
+   * `status: 'approved'` — a correction is the candidate's own stated text, already "signed off"
+   * by the act of typing it, so re-approving a regeneration of it would be a redundant gate. See
+   * `applyGapCorrections`'s comment for why that path is irrevocable-by-design.
+   */
+  private async synthesizeProfile(
+    userId: string,
+    corrections?: ProfileGenerationInput['corrections'],
+    status: 'pending_review' | 'approved' = 'pending_review'
+  ): Promise<CandidateProfile> {
     const resume = await db('resumes').where({ user_id: userId }).first();
     if (!resume || !resume.confirmed) {
       throw new AppError('RESUME_NOT_CONFIRMED', 'Confirm your resume details before generating a profile.', 400);
@@ -31,7 +43,8 @@ export class ProfileService {
       deepPromptTranscript: deepPromptMessages.map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content
-      }))
+      })),
+      corrections
     });
 
     const existing = await this.getProfile(userId);
@@ -39,16 +52,66 @@ export class ProfileService {
     const [profile] = await db('candidate_profiles')
       .insert({
         user_id: userId,
-        status: 'pending_review',
+        status,
         version: existing ? existing.version + 1 : 1,
         profile_data: profileData,
-        correction_log: existing?.correction_log || []
+        correction_log: existing?.correction_log || [],
+        approved_at: status === 'approved' ? new Date() : null
       })
       .onConflict('user_id')
-      .merge(['status', 'version', 'profile_data'])
+      .merge(['status', 'version', 'profile_data', 'approved_at'])
       .returning('*');
 
     return profile;
+  }
+
+  async generateProfile(userId: string): Promise<CandidateProfile> {
+    return this.synthesizeProfile(userId);
+  }
+
+  /**
+   * Step 7 -> Step 6 feedback loop: regenerates the profile from every currently-flagged sandbox
+   * gap at once, treating the candidate's correction notes as authoritative evidence rather than
+   * appending them anywhere for later review. No audit trail — once incorporated, a correction is
+   * discarded (the flag is cleared) rather than kept as history, so re-running this with nothing
+   * newly flagged is a no-op and a later session's new flags are picked up on the next apply.
+   *
+   * Unlike `flagInsight` (an AI-generated re-ask the candidate hasn't seen the answer to yet),
+   * this regenerates from text the candidate themselves wrote — there's nothing left to review, so
+   * it goes straight back to `approved` rather than `pending_review`. Deliberately irrevocable:
+   * going back to an earlier version isn't supported, only forward via more corrections.
+   */
+  async applyGapCorrections(userId: string): Promise<{ profile: CandidateProfile; appliedCount: number }> {
+    const pending = await db('sandbox_messages')
+      .where({ user_id: userId, flagged_gap: true })
+      .orderBy('created_at', 'asc');
+
+    if (pending.length === 0) {
+      throw new AppError('NO_PENDING_CORRECTIONS', 'No new corrections to apply.', 400);
+    }
+
+    const allMessages = await db('sandbox_messages').where({ user_id: userId }).orderBy('created_at', 'asc');
+
+    const corrections = pending.map((flagged) => {
+      const index = allMessages.findIndex((m) => m.id === flagged.id);
+      const question = [...allMessages.slice(0, index)].reverse().find((m) => m.role === 'user');
+      return {
+        question: question?.content || '',
+        wrongAnswer: flagged.content,
+        correction: flagged.gap_note as string
+      };
+    });
+
+    const profile = await this.synthesizeProfile(userId, corrections, 'approved');
+
+    await db('sandbox_messages')
+      .whereIn(
+        'id',
+        pending.map((m) => m.id)
+      )
+      .update({ flagged_gap: false, gap_note: null });
+
+    return { profile, appliedCount: pending.length };
   }
 
   /**

@@ -39,6 +39,18 @@ router.post('/insights/flag', requireAuth, validate(flagSchema), async (req: Aut
   }
 });
 
+// Step 7 -> Step 6 feedback loop: regenerate the profile from every currently-flagged sandbox gap
+// at once. See ProfileService.applyGapCorrections — corrections are discarded once incorporated,
+// and the result goes straight back to `approved` (no re-approval gate, no reopening the step).
+router.post('/apply-corrections', requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { profile, appliedCount } = await profileService.applyGapCorrections(req.userId!);
+    res.json({ profile, appliedCount });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/approve', requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const profile = await profileService.approveProfile(req.userId!);

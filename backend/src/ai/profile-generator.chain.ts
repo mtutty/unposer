@@ -22,7 +22,11 @@ const profileSchema = z.object({
       highlights: z.array(z.string())
     })
   ),
-  insights: z.array(insightSchema).min(3).describe('Inferred from stories, never from self-rating'),
+  // No .min() here — Anthropic's strict tool-use schema validation rejects arrays with a minItems
+  // other than 0 or 1 (this is the one array in the whole file that had an explicit bound, and it
+  // 400'd every generate call once structuredCall started requesting strict:true — see llm.ts).
+  // The "at least 3" requirement now lives only in the prompt below; nothing here enforces it.
+  insights: z.array(insightSchema).describe('At least 3 distinct insights, inferred from stories, never from self-rating'),
   workStyle: z.object({
     preferredEnvironment: z.string(),
     teamDynamics: z.string(),
@@ -53,6 +57,11 @@ export interface ProfileGenerationInput {
   isCareerChanger: boolean;
   logistics: LogisticsData;
   deepPromptTranscript: Array<{ role: 'user' | 'assistant'; content: string }>;
+  // Step 7 -> Step 6 feedback loop: corrections the candidate made after seeing their own profile
+  // tested in the practice interview. Present only when regenerating off flagged sandbox gaps
+  // (see ProfileService.applyGapCorrections) — treated as authoritative, not just more raw
+  // material to weigh evenly against the rest.
+  corrections?: Array<{ question: string; wrongAnswer: string; correction: string }>;
 }
 
 /**
@@ -64,19 +73,37 @@ export async function generateCandidateProfile(input: ProfileGenerationInput): P
   const system =
     'You synthesize a candidate career/personality profile from three sources: their resume, ' +
     'their stated logistics/goals, and a transcript of open-ended "tell me about a time..." ' +
-    'conversation. Every insight must be a narrative statement backed by cited evidence from the ' +
-    'transcript or resume — never a bare number, letter grade, or scale position. Extract STAR ' +
-    '(situation/task/action/result) stories directly from stories the candidate told. ' +
+    'conversation. Identify at least 3 distinct insights, each a narrative statement backed by ' +
+    'cited evidence from the transcript or resume — never a bare number, letter grade, or scale ' +
+    'position. Extract STAR (situation/task/action/result) stories directly from stories the ' +
+    'candidate told. ' +
     (input.isCareerChanger
       ? 'This candidate is changing industries/roles — frame goals and work style around where ' +
         'they are headed, not just where they have been.'
+      : '') +
+    (input.corrections?.length
+      ? ' The candidate also tested an earlier version of this profile in a practice interview ' +
+        'and flagged specific answers that did not reflect them, with a correction for each. ' +
+        'Treat those corrections as authoritative ground truth — reconcile the summary, insights, ' +
+        'and stories around them rather than weighing them as just one more data point.'
       : '');
 
   const human = [
     `Resume (structured): ${JSON.stringify(input.resume)}`,
     `Logistics/goals: ${JSON.stringify(input.logistics)}`,
     'Deep-prompt transcript:',
-    input.deepPromptTranscript.map((m) => `${m.role === 'user' ? 'Candidate' : 'Interviewer'}: ${m.content}`).join('\n')
+    input.deepPromptTranscript.map((m) => `${m.role === 'user' ? 'Candidate' : 'Interviewer'}: ${m.content}`).join('\n'),
+    ...(input.corrections?.length
+      ? [
+          'Candidate corrections from the practice interview (authoritative):',
+          input.corrections
+            .map(
+              (c, i) =>
+                `${i + 1}. Asked: "${c.question}"\n   Profile answered: "${c.wrongAnswer}"\n   Candidate says it should reflect: "${c.correction}"`
+            )
+            .join('\n')
+        ]
+      : [])
   ].join('\n\n');
 
   const result = await structuredCall(profileSchema, system, human, 0.4);
