@@ -240,6 +240,16 @@ export interface CandidateProfile {
 // Step 7 — Sandbox
 // ---------------------------------------------------------------------------
 
+// What grounded a sandbox reply — surfaced as an expandable "why this answer" disclosure so the
+// candidate can judge (and, via flagging, correct) the reply against the actual evidence rather
+// than just the prose. Identified by a follow-up call once the reply is fully streamed — see
+// sandbox-chat.chain.ts's identifySandboxCitations.
+export interface SandboxCitation {
+  source: 'work_history' | 'insight' | 'star_story' | 'goals' | 'preferences' | 'work_style';
+  label: string;
+  detail: string;
+}
+
 export interface SandboxMessage {
   id: string;
   user_id: string;
@@ -247,6 +257,7 @@ export interface SandboxMessage {
   content: string;
   flagged_gap: boolean;
   gap_note: string | null;
+  citations: SandboxCitation[] | null;
   created_at: Date;
 }
 
