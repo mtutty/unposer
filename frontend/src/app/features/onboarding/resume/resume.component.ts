@@ -1,13 +1,14 @@
 import { Component, OnInit, OnDestroy, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ResumeService } from '../../../core/resume/resume.service';
 import { Resume, WorkHistoryItem } from '../../../models/resume.model';
 import { STEP_ROUTES } from '../../../models/flow.model';
+import { StoryTrackerComponent } from '../../../shared/components/story-tracker/story-tracker.component';
 
 @Component({
     selector: 'app-resume-step',
-    imports: [FormsModule],
+    imports: [FormsModule, RouterLink, StoryTrackerComponent],
     template: `
     <span class="eyebrow">Tell Your Story · Resume</span>
     <h1>Start with your resume — or don't</h1>
@@ -18,7 +19,76 @@ import { STEP_ROUTES } from '../../../models/flow.model';
       what you're moving toward instead of trying to reframe what you're moving from.
     </p>
 
-    @if (!advanced()) {
+    <app-story-tracker />
+
+    @if (viewingConfirmed()) {
+      <div class="card panel confirmed-view">
+        <div class="confirmed-header">
+          <span class="stamp stamp-brass">Confirmed</span>
+          <button type="button" class="btn btn-ghost" (click)="editConfirmed()">Edit</button>
+        </div>
+        <h3>What we have on file</h3>
+
+        @if (data.summary) {
+          <p class="confirmed-summary">{{ data.summary }}</p>
+        }
+
+        <div class="confirmed-grid">
+          @if (data.contact.email || data.contact.location) {
+            <div class="confirmed-field">
+              <span class="eyebrow">Contact</span>
+              @if (data.contact.email) {
+                <p>{{ data.contact.email }}</p>
+              }
+              @if (data.contact.location) {
+                <p>{{ data.contact.location }}</p>
+              }
+            </div>
+          }
+          @if (data.skills.length) {
+            <div class="confirmed-field">
+              <span class="eyebrow">Skills</span>
+              <p>{{ data.skills.join(', ') }}</p>
+            </div>
+          }
+          @if (isCareerChanger && data.movingToward) {
+            <div class="confirmed-field">
+              <span class="eyebrow">Moving toward</span>
+              <p>{{ data.movingToward }}</p>
+            </div>
+          }
+        </div>
+
+        @if (data.workHistory.length) {
+          <div class="confirmed-jobs">
+            <span class="eyebrow">Work history</span>
+            @for (job of data.workHistory; track $index) {
+              <div class="confirmed-job">
+                <strong>{{ job.title || 'Untitled role' }}</strong>
+                @if (job.company) {
+                  <span class="meta"> · {{ job.company }}</span>
+                }
+                @if (job.startDate || job.endDate) {
+                  <span class="meta job-dates">{{ job.startDate }} – {{ job.endDate }}</span>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        <div class="next-row cta-row">
+          <span class="cta-line" aria-hidden="true"></span>
+          <a class="btn btn-primary" [routerLink]="nextRoute">
+            Continue to Goals &amp; Logistics
+            <svg class="arrow-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 8h11M9 4l4 4-4 4" />
+            </svg>
+          </a>
+        </div>
+      </div>
+    }
+
+    @if (!advanced() && !viewingConfirmed()) {
       <div class="card option upload-card">
         <span class="eyebrow">Upload your resume</span>
         <h3>Add your resume</h3>
@@ -75,8 +145,12 @@ import { STEP_ROUTES } from '../../../models/flow.model';
     @if (advanced()) {
       <form class="card panel confirm-form" (ngSubmit)="confirm()">
         <div class="confirm-header">
-          <span class="eyebrow">Confirm before we go further</span>
-          <button type="button" class="btn btn-ghost" (click)="startOver()">Start over</button>
+          <span class="eyebrow">{{ resume()?.confirmed ? 'Editing your confirmed resume' : 'Confirm before we go further' }}</span>
+          @if (resume()?.confirmed) {
+            <button type="button" class="btn btn-ghost" (click)="cancelEdit()">Cancel</button>
+          } @else {
+            <button type="button" class="btn btn-ghost" (click)="startOver()">Start over</button>
+          }
         </div>
         <h3>Does this look right?</h3>
 
@@ -130,7 +204,7 @@ import { STEP_ROUTES } from '../../../models/flow.model';
         }
 
         <button type="submit" class="btn btn-primary" [disabled]="confirming()">
-          {{ confirming() ? 'Saving…' : 'Confirm and continue' }}
+          {{ confirming() ? 'Saving…' : (resume()?.confirmed ? 'Save changes' : 'Confirm and continue') }}
         </button>
       </form>
     }
@@ -285,6 +359,52 @@ import { STEP_ROUTES } from '../../../models/flow.model';
         padding: 1.75rem;
       }
 
+      .confirmed-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+      }
+
+      .confirmed-summary {
+        color: var(--ink-soft);
+        max-width: 42em;
+      }
+
+      .confirmed-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1.25rem;
+        margin-top: 1rem;
+      }
+
+      .confirmed-field {
+        p {
+          margin: 0.2em 0 0;
+        }
+      }
+
+      .confirmed-jobs {
+        margin-top: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
+
+      .confirmed-job {
+        padding-top: 0.6rem;
+        border-top: 1px solid var(--border);
+
+        &:first-of-type {
+          border-top: none;
+          padding-top: 0.3rem;
+        }
+      }
+
+      .job-dates {
+        display: block;
+      }
+
       .confirm-form {
         display: flex;
         flex-direction: column;
@@ -341,11 +461,19 @@ export class ResumeStepComponent implements OnInit, OnDestroy {
   parsingStatus = signal('');
   confirming = signal(false);
   advanced = signal(false);
+  // Read-only "here's what we have on file" view for an already-confirmed resume — what the rail
+  // now lands on instead of bouncing straight past to Goals & Logistics.
+  viewingConfirmed = signal(false);
   advancing = signal(false);
   uploadError = signal('');
   isCareerChanger = false;
+  nextRoute = STEP_ROUTES['logistics'];
 
   data: any = this.blankData();
+  // Snapshot taken when entering an edit of an already-confirmed resume, so Cancel can restore it
+  // — `data` is the same object reference as the resume record's structured_data, mutated in place
+  // by the form's ngModel bindings, so there's nothing to revert to without one.
+  private confirmedSnapshot: any = null;
 
   // Upload+parse happens server-side in one request with no progress events of its own, so this
   // cycles through plausible stages on a timer purely to keep the wait legible — not a readout of
@@ -373,7 +501,10 @@ export class ResumeStepComponent implements OnInit, OnDestroy {
         this.isCareerChanger = resume.is_career_changer;
         this.data = resume.structured_data || this.blankData();
         if (resume.confirmed) {
-          this.router.navigate(['/onboarding/logistics']);
+          // Previously bounced straight past to Goals & Logistics — but the rail can now land
+          // here on purpose (revisiting a completed step), so show what was confirmed instead of
+          // routing around it.
+          this.viewingConfirmed.set(true);
         } else {
           // Already has a draft in progress from a prior visit — skip straight to the
           // confirm/edit screen instead of re-showing the upload/toggle selection step.
@@ -440,6 +571,22 @@ export class ResumeStepComponent implements OnInit, OnDestroy {
     this.data = this.blankData();
   }
 
+  /** Opens the (already-built) confirm/edit form on top of an already-confirmed resume, so the
+   *  rail's read-only "what we have on file" view has a way to make corrections. */
+  editConfirmed(): void {
+    this.confirmedSnapshot = JSON.parse(JSON.stringify(this.data));
+    this.viewingConfirmed.set(false);
+    this.advanced.set(true);
+  }
+
+  /** Backs out of an edit-of-a-confirmed-resume without saving — restores the snapshot taken in
+   *  editConfirmed() since the form's ngModel bindings mutate `data` in place. */
+  cancelEdit(): void {
+    if (this.confirmedSnapshot) this.data = this.confirmedSnapshot;
+    this.advanced.set(false);
+    this.viewingConfirmed.set(true);
+  }
+
   /** Commits whichever inputs are set (uploaded resume, and/or the career-changer toggle) and
    *  moves to the confirm/edit screen. No upload yet → falls back to blank manual entry. */
   next(): void {
@@ -481,8 +628,22 @@ export class ResumeStepComponent implements OnInit, OnDestroy {
 
   confirm(): void {
     this.confirming.set(true);
+    // Captured before the request resolves — distinguishes a first-time confirm (advance to the
+    // next step, the original behavior) from re-saving an edit to an already-confirmed resume
+    // (stay put and return to the read-only view, since the candidate got here on purpose from the
+    // rail and pushing them onward would just be the "flips away from what I clicked" bug again).
+    const wasAlreadyConfirmed = !!this.resume()?.confirmed;
     this.resumeService.confirm(this.data).subscribe({
-      next: () => this.router.navigate([STEP_ROUTES['logistics']]),
+      next: (result) => {
+        this.resume.set(result.resume);
+        this.confirming.set(false);
+        if (wasAlreadyConfirmed) {
+          this.advanced.set(false);
+          this.viewingConfirmed.set(true);
+        } else {
+          this.router.navigate([STEP_ROUTES['logistics']]);
+        }
+      },
       error: () => this.confirming.set(false)
     });
   }

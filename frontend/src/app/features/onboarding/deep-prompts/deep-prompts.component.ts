@@ -1,12 +1,13 @@
 import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ChatPanelComponent } from '../../../shared/components/chat-panel/chat-panel.component';
+import { StoryTrackerComponent } from '../../../shared/components/story-tracker/story-tracker.component';
 import { FlowService } from '../../../core/flow/flow.service';
 import { STEP_ROUTES } from '../../../models/flow.model';
 
 @Component({
     selector: 'app-deep-prompts-step',
-    imports: [ChatPanelComponent, RouterLink],
+    imports: [ChatPanelComponent, StoryTrackerComponent, RouterLink],
     template: `
     <span class="eyebrow">Tell Your Story · Your Stories — live chat only</span>
     <h1>Your stories</h1>
@@ -15,7 +16,9 @@ import { STEP_ROUTES } from '../../../models/flow.model';
       yourself. The stories carry the signal; there's nothing to score.
     </p>
 
-    <div class="chat-frame card">
+    <app-story-tracker />
+
+    <div class="chat-frame">
       <app-chat-panel step="deep_prompts" (completeChange)="onComplete()">
         <a doneAction class="btn btn-secondary" [routerLink]="nextRoute">Review your profile</a>
       </app-chat-panel>
