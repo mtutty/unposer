@@ -20,7 +20,7 @@ import { STEP_ROUTES } from '../../../models/flow.model';
             }
           </div>
 
-          @if (active) {
+          @if (active || stageState !== 'pending') {
             <div class="substeps">
               @for (step of flow.stepsForStage(stage.id); track step.id) {
                 @let state = flow.progress()?.steps_state?.[step.id] ?? 'pending';
@@ -37,6 +37,8 @@ import { STEP_ROUTES } from '../../../models/flow.model';
                   <span class="tab-name">{{ step.name }}</span>
                   @if (state === 'complete') {
                     <span class="tab-seal" aria-hidden="true">✓</span>
+                  } @else if (state === 'in_progress') {
+                    <span class="tab-current-mark" aria-hidden="true">→</span>
                   }
                 </a>
               }
@@ -67,8 +69,12 @@ import { STEP_ROUTES } from '../../../models/flow.model';
         color: var(--paper-text-soft);
       }
 
+      // NOT var(--ink) — that's the dark color meant for text sitting on the light --page
+      // background (like .tab-active below, which actually swaps to that background). The rail
+      // itself stays on the dark --cover chrome the whole time, so the active stage head needs the
+      // same light --paper-text family as everything else here, just the brighter of the two.
       .stage-active .stage-head {
-        color: var(--ink);
+        color: var(--paper-text);
       }
 
       .stage-done .stage-name {
@@ -118,7 +124,13 @@ import { STEP_ROUTES } from '../../../models/flow.model';
         color: var(--paper-text);
       }
 
-      .tab-current,
+      // .tab-active (routerLinkActive — the page you're actually viewing) is the only thing that
+      // gets this strong "selected" treatment now. .tab-current (the flow's in-progress frontier
+      // step, from steps_state) used to always be the same tab as .tab-active, back when the only
+      // way to view a step was to be currently working on it — now that the rail lets you browse
+      // back to completed steps, they can point at different tabs, and giving both the identical
+      // look made the frontier step (usually "Your Profile") read as permanently selected no
+      // matter where you'd actually navigated.
       .tab-active {
         background: var(--page);
         color: var(--ink);
@@ -129,13 +141,29 @@ import { STEP_ROUTES } from '../../../models/flow.model';
         color: var(--paper-text);
       }
 
-      .tab-seal {
+      // A quieter "pick up here" hint for the in-progress step — brighter label text, plus the
+      // trailing arrow below. :not(.tab-active) here only settles a same-specificity cascade tie
+      // against the rule above when a step is both current *and* the page you're viewing — the
+      // arrow itself (.tab-current-mark) still renders in that case, same as the done checkmark
+      // never disappearing on selection; only this text-color override backs off.
+      .tab-current:not(.tab-active) {
+        color: var(--paper-text);
+      }
+
+      .tab-seal,
+      .tab-current-mark {
         margin-left: auto;
-        color: var(--sage);
         font-size: 0.8em;
       }
 
-      .tab-current .tab-seal,
+      .tab-seal {
+        color: var(--sage);
+      }
+
+      .tab-current-mark {
+        color: var(--brass-strong);
+      }
+
       .tab-active .tab-seal {
         color: var(--sage-strong);
       }
