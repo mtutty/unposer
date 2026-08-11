@@ -87,10 +87,14 @@ import { truncateWords } from '../../../../shared/utils/text';
         font-size: 0.85rem;
       }
 
+      // The candidate's actual answer — the reason this panel exists — was reading as an
+      // afterthought next to the description above it (smaller, monospace, muted). Matching (and
+      // slightly exceeding) the description's weight here, in the same narrative body font rather
+      // than a "metadata" mono treatment, puts the emphasis on the more important of the two.
       .area-row-summary {
-        font-family: var(--font-mono);
-        font-size: 0.76rem;
-        color: var(--sage-strong);
+        font-size: 0.9rem;
+        color: var(--ink);
+        font-weight: 500;
       }
     `
     ]

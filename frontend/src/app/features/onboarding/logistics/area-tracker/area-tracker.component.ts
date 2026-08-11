@@ -12,9 +12,9 @@ import { truncateWords } from '../../../../shared/utils/text';
  * checklist — the "gamify completion" ask.
  *
  * Desktop-only (see LogisticsStepComponent, which hides this behind a media query on mobile in
- * favor of the "Goals" tab): clicking anywhere on the row — a glyph or the row itself — toggles a
- * dropdown with the full AreaListComponent read, so the compact row and the full explanation are
- * one click apart rather than tooltip-hover-only.
+ * favor of the "Goals" tab): clicking anywhere on the row — a glyph or the row itself — slides
+ * open the full AreaListComponent read inline, in normal document flow (full width of whatever
+ * column it's in — the chat panel above), rather than as a floating dropdown overlaying the page.
  */
 @Component({
     selector: 'app-area-tracker',
@@ -50,7 +50,7 @@ import { truncateWords } from '../../../../shared/utils/text';
         </ul>
         <svg
           class="chevron"
-          [class.chevron-open]="expanded()"
+          [class.chevron-closed]="!expanded()"
           viewBox="0 0 16 16"
           width="14"
           height="14"
@@ -65,11 +65,16 @@ import { truncateWords } from '../../../../shared/utils/text';
         </svg>
       </div>
 
-      @if (expanded()) {
-        <div class="area-tracker-panel card">
-          <app-area-list [areas]="areas" [data]="data" />
+      <!-- Always rendered (rather than @if-gated) so the grid-template-rows transition below has
+           something to animate between — it slides open in normal flow, pushing the chat panel
+           down, instead of floating a dropdown over it. -->
+      <div class="area-tracker-slide" [class.area-tracker-open]="expanded()">
+        <div class="area-tracker-slide-inner">
+          <div class="area-tracker-panel">
+            <app-area-list [areas]="areas" [data]="data" />
+          </div>
         </div>
-      }
+      </div>
     </div>
   `,
     changeDetection: ChangeDetectionStrategy.Eager,
@@ -95,14 +100,17 @@ import { truncateWords } from '../../../../shared/utils/text';
         }
       }
 
+      // The path draws a down-pointing chevron (▼) — its natural, unrotated orientation reads as
+      // "open" (this is what's revealed below once expanded), so only the *closed* state rotates
+      // it to point right (▶), the conventional "click to reveal" affordance.
       .chevron {
         color: var(--pencil);
         flex-shrink: 0;
         transition: transform 0.2s ease;
       }
 
-      .chevron-open {
-        transform: rotate(180deg);
+      .chevron-closed {
+        transform: rotate(-90deg);
       }
 
       .area-tracker {
@@ -187,13 +195,32 @@ import { truncateWords } from '../../../../shared/utils/text';
         transform: translateX(-50%) translateY(0);
       }
 
+      // The slide-open mechanism: animating a grid track from 0fr to 1fr (rather than height:auto,
+      // which can't be transitioned, or max-height, which needs a guessed cap) gives a smooth
+      // reveal to the content's actual height. The inner wrapper supplies the overflow:hidden the
+      // technique needs — it lives on a separate element so the panel's own padding/border don't
+      // get clipped mid-transition.
+      .area-tracker-slide {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.22s ease;
+      }
+
+      .area-tracker-open {
+        grid-template-rows: 1fr;
+      }
+
+      .area-tracker-slide-inner {
+        overflow: hidden;
+      }
+
       .area-tracker-panel {
-        position: absolute;
-        top: calc(100% + 0.5rem);
-        left: -0.4rem;
-        width: min(26rem, 90vw);
+        width: 100%;
+        margin-top: 0.5rem;
         padding: 1.25rem 1.4rem;
-        z-index: 6;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: #fff;
       }
     `
     ]
@@ -228,7 +255,7 @@ export class AreaTrackerComponent {
     this.toggle();
   }
 
-  /** Collapses the dropdown on an outside click, same affordance as any other popover. */
+  /** Collapses the panel on an outside click, same affordance as any other disclosure. */
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
     if (this.expanded() && !this.el.nativeElement.contains(event.target as Node)) {

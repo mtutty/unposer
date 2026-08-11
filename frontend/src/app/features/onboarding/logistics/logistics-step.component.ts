@@ -93,7 +93,7 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
         </div>
 
         @if (channel() === 'app') {
-          <div class="chat-frame card">
+          <div class="chat-frame">
             <app-chat-panel
               step="logistics"
               [infoAreas]="infoAreas()"
@@ -106,7 +106,7 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
         }
 
         @if (channel() === 'email') {
-          <div class="chat-frame card email-thread">
+          <div class="chat-frame email-thread">
             <div class="thread">
               @for (message of inbox()?.messages ?? []; track message.id) {
                 <div class="chat-bubble" [class.from-user]="message.role === 'user'" [class.from-assistant]="message.role === 'assistant'">
