@@ -240,6 +240,26 @@ button {
   box-shadow: var(--shadow-card);
 }
 
+// A bordered card with a left accent stripe, used for inline callouts (confirmations, follow-up
+// prompts) — pair with `.card` for the background/shadow. Brass by default (informational/success);
+// `.banner-brick` swaps to brick for "this needs your attention" callouts.
+.banner {
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-left: 3px solid var(--brass-strong);
+
+  p {
+    margin: 0;
+  }
+}
+
+.banner-brick {
+  border-left-color: var(--brick-strong);
+}
+
 .field label {
   display: block;
   font-family: var(--font-display);

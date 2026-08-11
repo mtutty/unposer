@@ -1,14 +1,15 @@
-import { Component, OnInit, OnDestroy, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ResumeService } from '../../../core/resume/resume.service';
 import { Resume, WorkHistoryItem } from '../../../models/resume.model';
 import { STEP_ROUTES } from '../../../models/flow.model';
 import { StoryTrackerComponent } from '../../../shared/components/story-tracker/story-tracker.component';
+import { GeneratingStatusComponent } from '../../../shared/components/generating-status/generating-status.component';
 
 @Component({
     selector: 'app-resume-step',
-    imports: [FormsModule, RouterLink, StoryTrackerComponent],
+    imports: [FormsModule, RouterLink, StoryTrackerComponent, GeneratingStatusComponent],
     template: `
     <span class="eyebrow">Tell Your Story · Resume</span>
     <h1>Start with your resume — or don't</h1>
@@ -105,13 +106,7 @@ import { StoryTrackerComponent } from '../../../shared/components/story-tracker/
           </p>
         }
         @if (parsing()) {
-          <div class="parsing-status">
-            <span class="spinner" aria-hidden="true"></span>
-            <div class="parsing-copy">
-              <p class="parsing-line" aria-live="polite">{{ parsingStatus() }}</p>
-              <p class="meta parsing-estimate">Usually takes about 10–20 seconds.</p>
-            </div>
-          </div>
+          <app-generating-status [active]="true" [stages]="parsingStages" estimate="Usually takes about 10–20 seconds." />
         }
         @if (resume() && !parsing()) {
           <p class="uploaded-line"><span aria-hidden="true">✓</span> Resume uploaded — you'll review it on the next screen.</p>
@@ -237,45 +232,6 @@ import { StoryTrackerComponent } from '../../../shared/components/story-tracker/
         color: var(--sage-strong);
         font-weight: 600;
         margin: 0;
-      }
-
-      .parsing-status {
-        display: flex;
-        align-items: center;
-        gap: 0.9rem;
-      }
-
-      .spinner {
-        flex-shrink: 0;
-        width: 1.6rem;
-        height: 1.6rem;
-        border-radius: 50%;
-        border: 3px solid var(--border);
-        border-top-color: var(--brass-strong);
-        animation: spin 0.8s linear infinite;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .parsing-copy {
-        display: flex;
-        flex-direction: column;
-        gap: 0.15rem;
-      }
-
-      .parsing-line {
-        margin: 0;
-        font-weight: 600;
-        color: var(--ink);
-      }
-
-      .parsing-estimate {
-        margin: 0;
-        font-size: 0.78rem;
       }
 
       .optional-note {
@@ -447,18 +403,12 @@ import { StoryTrackerComponent } from '../../../shared/components/story-tracker/
         }
       }
 
-      @media (prefers-reduced-motion: reduce) {
-        .spinner {
-          animation: none;
-        }
-      }
     `
     ]
 })
-export class ResumeStepComponent implements OnInit, OnDestroy {
+export class ResumeStepComponent implements OnInit {
   resume = signal<Resume | null>(null);
   parsing = signal(false);
-  parsingStatus = signal('');
   confirming = signal(false);
   advanced = signal(false);
   // Read-only "here's what we have on file" view for an already-confirmed resume — what the rail
@@ -478,21 +428,17 @@ export class ResumeStepComponent implements OnInit, OnDestroy {
   // Upload+parse happens server-side in one request with no progress events of its own, so this
   // cycles through plausible stages on a timer purely to keep the wait legible — not a readout of
   // real backend phase transitions. The AI parse call dominates the wall-clock time, so the timing
-  // here is a rough estimate, not measured telemetry.
-  private readonly parsingStages: Array<{ afterMs: number; text: string }> = [
+  // here is a rough estimate, not measured telemetry. Timer bookkeeping itself now lives in
+  // GeneratingStatusComponent — this component just owns the stage text and flips `parsing`.
+  readonly parsingStages: Array<{ afterMs: number; text: string }> = [
     { afterMs: 0, text: 'Uploading your resume…' },
     { afterMs: 900, text: 'Reading the file…' },
     { afterMs: 2500, text: 'Pulling out your work history…' },
     { afterMs: 6000, text: 'Double-checking the details…' },
     { afterMs: 12000, text: 'Still working — this one is taking a bit longer than usual…' }
   ];
-  private parsingTimers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(private resumeService: ResumeService, private router: Router) {}
-
-  ngOnDestroy(): void {
-    this.clearParsingStatus();
-  }
 
   ngOnInit(): void {
     this.resumeService.get().subscribe((resume) => {
@@ -521,35 +467,18 @@ export class ResumeStepComponent implements OnInit, OnDestroy {
 
     this.parsing.set(true);
     this.uploadError.set('');
-    this.startParsingStatus();
 
     this.resumeService.upload(file, this.isCareerChanger).subscribe({
       next: (resume) => {
         this.resume.set(resume);
         this.data = resume.structured_data || this.blankData();
         this.parsing.set(false);
-        this.clearParsingStatus();
       },
       error: (err) => {
         this.uploadError.set(err.error?.error?.message || 'Upload failed');
         this.parsing.set(false);
-        this.clearParsingStatus();
       }
     });
-  }
-
-  /** Kicks off the staged status-message cycle for the duration of the upload+parse request. */
-  private startParsingStatus(): void {
-    this.clearParsingStatus();
-    this.parsingStatus.set(this.parsingStages[0].text);
-    this.parsingTimers = this.parsingStages
-      .slice(1)
-      .map((stage) => setTimeout(() => this.parsingStatus.set(stage.text), stage.afterMs));
-  }
-
-  private clearParsingStatus(): void {
-    this.parsingTimers.forEach((timer) => clearTimeout(timer));
-    this.parsingTimers = [];
   }
 
   /** Lets the candidate swap files before advancing — the upload card only ever holds one. */

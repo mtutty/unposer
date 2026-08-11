@@ -1,12 +1,12 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild, signal, computed, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { SandboxService } from '../../../core/sandbox/sandbox.service';
-import { ProfileService } from '../../../core/profile/profile.service';
 import { FlowService } from '../../../core/flow/flow.service';
 import { SandboxCitation, SandboxMessage } from '../../../models/sandbox.model';
 import { STEP_ROUTES } from '../../../models/flow.model';
+import { ProfileCorrectionsComponent } from '../../../shared/components/profile-corrections/profile-corrections.component';
 
 /**
  * Step 7 practice-interview chat. Unlike the live-chat steps (chat-panel.component.ts, over a
@@ -17,7 +17,7 @@ import { STEP_ROUTES } from '../../../models/flow.model';
  */
 @Component({
     selector: 'app-sandbox-step',
-    imports: [FormsModule, RouterLink],
+    imports: [FormsModule, RouterLink, ProfileCorrectionsComponent],
     template: `
     <span class="eyebrow">Interview Yourself · Practice Interview</span>
     <h1>Practice interview</h1>
@@ -120,34 +120,12 @@ import { STEP_ROUTES } from '../../../models/flow.model';
       </form>
     </div>
 
-    @if (generating()) {
-      <div class="generating-status">
-        <span class="spinner" aria-hidden="true"></span>
-        <div class="generating-copy">
-          <p class="generating-line" aria-live="polite">{{ generatingStatus() }}</p>
-          <p class="meta generating-estimate">Usually takes about a minute.</p>
-        </div>
-      </div>
-    } @else if (pendingGapCount() > 0) {
-      <div class="card corrections-bar">
-        <p>
-          You've flagged {{ pendingGapCount() }} answer{{ pendingGapCount() === 1 ? '' : 's' }} as not
-          quite right. Apply your corrections to update your profile.
-        </p>
-        <button class="btn btn-primary" (click)="applyCorrections()">Apply my edits</button>
-      </div>
-    }
-
-    @if (applyError()) {
-      <p class="error-line">{{ applyError() }}</p>
-    }
-
-    @if (appliedBanner()) {
-      <div class="card applied-banner">
-        <p>{{ appliedBanner() }}</p>
-        <a class="btn btn-secondary" [routerLink]="profileReviewRoute">See your updated profile</a>
-      </div>
-    }
+    <app-profile-corrections
+      [showList]="false"
+      explainerText="Apply your corrections to update your profile."
+      [bannerLink]="profileReviewRoute"
+      (applied)="onCorrectionsApplied()"
+    />
 
     <a class="btn btn-secondary continue" [routerLink]="shareRoute">Continue to share</a>
   `,
@@ -365,64 +343,6 @@ import { STEP_ROUTES } from '../../../models/flow.model';
         }
       }
 
-      // Same treatment as the profile page's own generate/apply wait state
-      // (profile-review.component.ts) — this action runs the identical regeneration and takes the
-      // same ~minute, so it should never look like just a disabled button with nothing happening.
-      .generating-status {
-        display: flex;
-        align-items: center;
-        gap: 0.9rem;
-        margin-top: 1.5rem;
-      }
-
-      .spinner {
-        flex-shrink: 0;
-        width: 1.6rem;
-        height: 1.6rem;
-        border-radius: 50%;
-        border: 3px solid var(--border);
-        border-top-color: var(--brass-strong);
-        animation: spin 0.8s linear infinite;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .generating-copy {
-        display: flex;
-        flex-direction: column;
-        gap: 0.15rem;
-      }
-
-      .generating-line {
-        margin: 0;
-        font-weight: 600;
-        color: var(--ink);
-      }
-
-      .generating-estimate {
-        margin: 0;
-        font-size: 0.78rem;
-      }
-
-      .corrections-bar,
-      .applied-banner {
-        margin-top: 1.5rem;
-        padding: 1.25rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        border-left: 3px solid var(--brass-strong);
-
-        p {
-          margin: 0;
-        }
-      }
-
       .continue {
         margin-top: 1.5rem;
         align-self: flex-start;
@@ -430,10 +350,6 @@ import { STEP_ROUTES } from '../../../models/flow.model';
 
       @media (prefers-reduced-motion: reduce) {
         .thinking span {
-          animation: none;
-        }
-
-        .spinner {
           animation: none;
         }
       }
@@ -458,31 +374,10 @@ export class SandboxStepComponent implements OnInit, OnDestroy {
   profileReviewRoute = STEP_ROUTES['profile_review'];
   expandedCitations = signal<Set<string>>(new Set());
 
-  // Step 7 -> Step 6 feedback loop: batch-apply rather than a live per-message retry, see
-  // profile.service.ts's applyCorrections. Recomputed off `messages` so it stays in sync whether
-  // a flag was just added or a prior apply cleared it.
-  pendingGapCount = computed(() => this.messages().filter((m) => m.flagged_gap).length);
-  generating = signal(false);
-  generatingStatus = signal('');
-  applyError = signal('');
-  appliedBanner = signal('');
-
-  // Same staged-message idea as profile-review.component.ts's generatingStages — applying
-  // corrections re-runs the identical profile-generator chain, so it deserves the identical
-  // ~minute-long wait treatment rather than just a disabled button.
-  private readonly generatingStages: Array<{ afterMs: number; text: string }> = [
-    { afterMs: 0, text: 'Pulling together your resume, goals, and stories…' },
-    { afterMs: 4000, text: 'Reconciling your corrections with the rest of your profile…' },
-    { afterMs: 12000, text: 'Drafting your updated narrative summary…' },
-    { afterMs: 25000, text: 'Writing up what we noticed, with the evidence behind it…' },
-    { afterMs: 45000, text: 'Still working — this one is taking a bit longer than usual…' }
-  ];
-  private generatingTimers: ReturnType<typeof setTimeout>[] = [];
-
   @ViewChild('threadEl') threadEl?: ElementRef<HTMLDivElement>;
   private streamSub?: Subscription;
 
-  constructor(private sandboxService: SandboxService, private profileService: ProfileService, private flow: FlowService) {}
+  constructor(private sandboxService: SandboxService, private flow: FlowService) {}
 
   ngOnInit(): void {
     this.sandboxService.getHistory().subscribe((history) => this.messages.set(history));
@@ -492,21 +387,6 @@ export class SandboxStepComponent implements OnInit, OnDestroy {
     // Aborts the in-flight fetch (see SandboxService.streamMessage's teardown) rather than letting
     // an unread reply keep streaming after the candidate has navigated away.
     this.streamSub?.unsubscribe();
-    this.clearGeneratingStatus();
-  }
-
-  /** Kicks off the staged status-message cycle for the duration of an apply-corrections request. */
-  private startGeneratingStatus(): void {
-    this.clearGeneratingStatus();
-    this.generatingStatus.set(this.generatingStages[0].text);
-    this.generatingTimers = this.generatingStages
-      .slice(1)
-      .map((stage) => setTimeout(() => this.generatingStatus.set(stage.text), stage.afterMs));
-  }
-
-  private clearGeneratingStatus(): void {
-    this.generatingTimers.forEach((timer) => clearTimeout(timer));
-    this.generatingTimers = [];
   }
 
   onEnter(event: Event): void {
@@ -614,30 +494,10 @@ export class SandboxStepComponent implements OnInit, OnDestroy {
     });
   }
 
-  applyCorrections(): void {
-    if (this.generating()) return;
-    this.generating.set(true);
-    this.applyError.set('');
-    this.appliedBanner.set('');
-    this.startGeneratingStatus();
-
-    this.profileService.applyCorrections().subscribe({
-      next: ({ appliedCount }) => {
-        // Applied corrections are discarded server-side (flag cleared, note dropped) and the
-        // result goes straight back to `approved` — refetch so this transcript reflects that.
-        this.sandboxService.getHistory().subscribe((history) => this.messages.set(history));
-        this.appliedBanner.set(
-          `Your profile has been updated with ${appliedCount} correction${appliedCount === 1 ? '' : 's'}.`
-        );
-        this.generating.set(false);
-        this.clearGeneratingStatus();
-      },
-      error: (err) => {
-        this.applyError.set(err.error?.error?.message || 'Could not apply your corrections — try again.');
-        this.generating.set(false);
-        this.clearGeneratingStatus();
-      }
-    });
+  /** ProfileCorrectionsComponent's (applied) output — flags were cleared server-side, so refetch
+   *  this transcript to reflect that. */
+  onCorrectionsApplied(): void {
+    this.sandboxService.getHistory().subscribe((history) => this.messages.set(history));
   }
 
   private scrollToBottom(): void {
