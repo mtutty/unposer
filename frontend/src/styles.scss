@@ -314,6 +314,11 @@ button {
   padding: 0.75em 1em;
   border-radius: var(--radius-md);
   line-height: 1.5;
+  // Preserves \n\n paragraph breaks from AI-authored replies (still wraps normally otherwise) —
+  // without this, HTML's default whitespace collapsing flattens every reply to one run-on block
+  // regardless of how the model actually formatted it. Inherited by chat-panel's nested
+  // .bubble-text too, since it doesn't set its own white-space.
+  white-space: pre-wrap;
 }
 
 .chat-bubble.from-user {
