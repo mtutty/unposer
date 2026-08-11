@@ -52,9 +52,11 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
           @if (item.kind === 'extraction') {
             <div class="extraction-log">
               @for (entry of item.entries; track entry.area.id) {
-                <app-area-glyph [areaId]="entry.area.id" [size]="16" class="extraction-glyph" />
+                <div class="extraction-row">
+                  <app-area-glyph [areaId]="entry.area.id" [size]="16" class="extraction-glyph" />
+                  <span class="extraction-text">{{ entry.area.label }}: {{ entry.summary }}</span>
+                </div>
               }
-              <span class="extraction-text">{{ extractionText(item) }}</span>
             </div>
           } @else {
             @let old = isOld(item);
@@ -111,6 +113,11 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
         display: flex;
         flex: 1;
         min-height: 0;
+        // Without this, a flex item's automatic min-width falls back to its content's min-content
+        // size — and a nowrap span (or any other unbreakable token) inside .thread would then force
+        // this whole host wider instead of wrapping/eliding, blowing the layout out past the page's
+        // right edge. See the extraction-log rules below for the case that actually triggered it.
+        min-width: 0;
       }
 
       .chat {
@@ -173,12 +180,22 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
         }
       }
 
-      // The "thought process" log line — deliberately smaller and unbordered so it reads as a
-      // trace of what the AI noticed, not another conversation bubble.
+      // The "thought process" log — deliberately smaller and unbordered so it reads as a trace of
+      // what the AI noticed, not another conversation bubble. One row per area it touched this
+      // turn, rather than one nowrap/ellipsis line for all of them, so a longer summary wraps in
+      // place instead of getting clipped or pushing the layout wider.
+      //
+      // It's a takeaway from the *candidate's* message, not the assistant's reply that happens to
+      // follow it in the DOM, so it's pinned to the right — same side as .chat-bubble.from-user —
+      // rather than defaulting to the left where it'd visually read as part of the assistant's
+      // side. align-self overrides .thread's default stretch so it shrinks to content width
+      // instead of spanning full width with nothing to right-align within.
       .extraction-log {
         display: flex;
-        align-items: center;
-        gap: 0.4em;
+        flex-direction: column;
+        gap: 0.3em;
+        align-self: flex-end;
+        max-width: 72%;
         margin: -0.35rem 0.25rem 0;
         padding: 0.1em 0;
         font-family: var(--font-mono);
@@ -186,16 +203,21 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
         color: var(--pencil);
       }
 
+      .extraction-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.4em;
+      }
+
       .extraction-glyph {
         flex-shrink: 0;
+        margin-top: 0.1em;
         color: var(--brass-strong);
       }
 
       .extraction-text {
         min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow-wrap: break-word;
       }
 
       // Clamps every message except each role's latest to 3 lines, so a long thread stays scannable
@@ -330,14 +352,15 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
     this.ws.disconnect();
   }
 
-  /** True for any message other than the latest one from its own role — those are the ones that
-   *  get clamped to 3 lines, since the newest exchange (one bubble per side) is what's actively
-   *  being read. Extraction-log items are skipped when walking backward — they don't have a role. */
+  /** True for any message other than the single most recent one in the thread — everything else
+   *  starts clamped to 3 lines, regardless of which side sent it, so only the last exchange reads
+   *  fully open by default. Extraction-log items are skipped when finding "the latest" — they
+   *  don't have a role and aren't rendered as a bubble. */
   isOld(message: DisplayMessage): boolean {
     const list = this.items();
     for (let i = list.length - 1; i >= 0; i--) {
       const item = list[i];
-      if (item.kind === 'message' && item.role === message.role) return item.id !== message.id;
+      if (item.kind === 'message') return item.id !== message.id;
     }
     return false;
   }
@@ -349,12 +372,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
       else next.add(id);
       return next;
     });
-  }
-
-  /** A single-line takeaway across all areas an extraction turn touched, e.g. "Target Role &
-   *  Industry: senior PM roles in fintech · Compensation: $140–160k base". */
-  extractionText(item: ExtractionLogItem): string {
-    return item.entries.map((entry) => `${entry.area.label}: ${entry.summary}`).join(' · ');
   }
 
   /** Resolves a turn's raw `extracted`/metadata object down to the entries worth logging — only
