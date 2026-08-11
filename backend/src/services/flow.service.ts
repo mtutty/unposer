@@ -32,7 +32,13 @@ export class FlowService {
     return progress;
   }
 
-  /** Marks a step complete and advances current_step to the next one in order. */
+  /**
+   * Marks a step complete and advances current_step to the next one in order — unless the
+   * candidate is re-confirming a step they've already moved past (e.g. revisiting Resume from the
+   * rail after Logistics/Your Stories are done and re-saving an edit). In that case current_step
+   * stays put: this step's own steps_state entry still gets marked 'complete' the same way, but we
+   * don't drag the flow's position backward just because an earlier step was touched again.
+   */
   async completeStep(userId: string, stepId: FlowStepId): Promise<FlowProgress> {
     const progress = await this.getProgress(userId);
     const stepsState = { ...progress.steps_state, [stepId]: 'complete' as StepStatus };
@@ -43,11 +49,15 @@ export class FlowService {
       stepsState[next.id] = 'in_progress';
     }
 
+    const currentStepIndex = flowSteps.findIndex((s) => s.id === progress.current_step);
+    const alreadyPastThisStep = currentStepIndex > currentIndex;
+    const newCurrentStep = alreadyPastThisStep ? progress.current_step : next ? next.id : stepId;
+
     const [updated] = await db('flow_progress')
       .where({ user_id: userId })
       .update({
         steps_state: stepsState,
-        current_step: next ? next.id : stepId,
+        current_step: newCurrentStep,
         updated_at: new Date()
       })
       .returning('*');
