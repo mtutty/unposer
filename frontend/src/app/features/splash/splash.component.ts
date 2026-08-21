@@ -21,9 +21,10 @@ import { RouterLink } from '@angular/router';
           <span class="stamp stamp-brass">v1 prototype</span>
           <h1>The real you.<br /><em>Unposed.</em></h1>
           <p class="lede">
-            Most hiring starts with a performance — a resume polished for keyword scanners, an
-            interview rehearsed until it's hollow. Unposer starts with a conversation instead, and
-            builds a career profile that actually sounds like you.
+            A resume is a highlight reel. Unposer runs long-form conversations that surface how
+            you actually think, decide, and work — then turns the result into a virtual interview
+            twin recruiters can talk to any time. Nobody spends a meeting on a fit that was never
+            there.
           </p>
           <div class="hero-cta">
             <a routerLink="/login" class="btn btn-primary btn-lg">Get started</a>
@@ -33,52 +34,66 @@ import { RouterLink } from '@angular/router';
       </section>
 
       <section class="container section">
-        <span class="eyebrow">How it works</span>
-        <h2>Three conversations, not one form</h2>
-        <div class="steps">
-          <div class="card step">
-            <span class="step-num font-display">01</span>
-            <h3>Share your story</h3>
+        <span class="eyebrow">What we actually build</span>
+        <h2>Insight recruiters can talk to, 24/7</h2>
+        <div class="values">
+          <div class="card value">
+            <h3>How you actually work</h3>
             <p>
-              Upload your resume — or start from scratch if you're changing careers — then talk
-              through your goals, target roles, and priorities on your own schedule.
+              Long-form conversation, not multiple choice. We distill the calls you made under
+              pressure, how you collaborate, what conditions bring out your best — the kind of
+              insight a bullet list can't hold. Every insight cites the story it came from, and
+              anything that reads wrong gets flagged and re-asked, never silently rewritten.
             </p>
           </div>
-          <div class="card step">
-            <span class="step-num font-display">02</span>
-            <h3>Go deeper</h3>
+          <div class="card value">
+            <h3>A virtual interview twin</h3>
             <p>
-              A few open-ended conversations surface what a bullet-point resume can't: the hard
-              calls you made, the wins you're proud of, how you actually work with people.
+              Your approved profile becomes a live conversation partner. Recruiters ask follow-up
+              questions and get grounded answers pulled from what you actually said — any hour,
+              not just business hours.
             </p>
           </div>
-          <div class="card step">
-            <span class="step-num font-display">03</span>
-            <h3>Review &amp; share</h3>
+          <div class="card value">
+            <h3>Nobody's time gets wasted</h3>
             <p>
-              Approve an AI-built profile that cites your own words as evidence. Practice the
-              pitch in a private sandbox, then share a link recruiters can actually talk to.
+              Fit gets tested before a meeting is ever booked. You skip interviews for roles that
+              were never right for you; recruiters and hiring teams skip candidates — and teams —
+              that were never going to click.
             </p>
           </div>
         </div>
       </section>
 
-      <section class="values-band">
+      <section class="band-alt">
         <div class="container section">
-          <span class="eyebrow">Why it's different</span>
-          <h2>No posing required</h2>
-          <div class="values">
-            <div class="value">
-              <h3>Your words, not keyword-stuffing</h3>
-              <p>No score-chasing or resume-speak — just your real experience, told the way you'd tell it.</p>
+          <span class="eyebrow">How it works</span>
+          <h2>Three conversations, not one form</h2>
+          <div class="steps">
+            <div class="card step">
+              <span class="step-num font-display">01</span>
+              <h3>Share your story</h3>
+              <p>
+                Upload your resume — or start from scratch if you're changing careers — then talk
+                through your goals, target roles, and priorities on your own schedule.
+              </p>
             </div>
-            <div class="value">
-              <h3>You approve everything</h3>
-              <p>Anything that reads wrong gets flagged and re-asked, never silently edited. Nothing publishes without your OK.</p>
+            <div class="card step">
+              <span class="step-num font-display">02</span>
+              <h3>Go deeper</h3>
+              <p>
+                A few open-ended conversations surface what a bullet-point resume can't: the hard
+                calls you made, the wins you're proud of, how you actually work with people.
+              </p>
             </div>
-            <div class="value">
-              <h3>A conversation, not a PDF</h3>
-              <p>Recruiters get to ask follow-up questions and get real answers — grounded in what you actually said.</p>
+            <div class="card step">
+              <span class="step-num font-display">03</span>
+              <h3>Review &amp; share</h3>
+              <p>
+                Approve an AI-built profile that cites your own words as evidence. Meet your
+                virtual interview twin in a private sandbox, then share a link so recruiters can
+                talk to it too.
+              </p>
             </div>
           </div>
         </div>
@@ -220,14 +235,22 @@ import { RouterLink } from '@angular/router';
         font-size: 0.96rem;
       }
 
-      .values-band {
+      // Second-band wrapper (currently "How it works") — kept as a distinct class from .hero/
+      // .footer so backgrounds keep alternating cover/page/page-2/cover regardless of which
+      // section sits in which slot.
+      .band-alt {
         background: var(--page-2);
       }
 
       .values {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 2rem;
+        align-items: stretch;
+        gap: 1.25rem;
+      }
+
+      .value {
+        padding: 1.5rem;
       }
 
       .value h3 {
