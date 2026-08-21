@@ -44,8 +44,14 @@ services:
       - "5432"
     env_file:
       - .env
+    # 18+ images changed the expected volume layout — PGDATA now defaults to a major-version-
+    # named subdirectory (/var/lib/postgresql/18/docker) so pg_upgrade --link works across
+    # versions within one mount, and the entrypoint refuses to start (or, worse, silently
+    # initializes into the container's own writable layer instead of the volume — verified by
+    # hand against this exact image) if the volume is mounted at the old .../data path instead
+    # of this parent directory. See https://github.com/docker-library/postgres/pull/1259.
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
 
 volumes:
   postgres_data:
