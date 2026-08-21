@@ -1,7 +1,14 @@
-import { Component, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
+
+// Friendly text for the ?error= codes auth.routes.ts's /google/callback redirects back with.
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  access_denied: 'Sign-in was cancelled.',
+  oauth_state_mismatch: 'Your sign-in session expired — please try again.',
+  oauth_failed: 'Google sign-in failed. Please try again, or use dev login below.'
+};
 
 @Component({
     selector: 'app-login',
@@ -22,6 +29,11 @@ import { AuthService } from '../../core/auth/auth.service';
 
         @if (error()) {
           <p class="error-line">{{ error() }}</p>
+        }
+
+        @if (providers().includes('google')) {
+          <a class="btn btn-secondary" href="/api/auth/google">Continue with Google</a>
+          <p class="meta divider"><span>or</span></p>
         }
 
         <div class="field">
@@ -89,16 +101,48 @@ import { AuthService } from '../../core/auth/auth.service';
         text-align: center;
         margin: 0;
       }
+
+      .divider {
+        display: flex;
+        align-items: center;
+        text-align: center;
+        color: var(--paper-text-soft);
+        margin: 0;
+
+        &::before,
+        &::after {
+          content: '';
+          flex: 1;
+          border-bottom: 1px solid var(--border);
+        }
+
+        span {
+          padding: 0 0.75em;
+        }
+      }
     `
     ]
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
   username = '';
   password = '';
   loading = signal(false);
   error = signal('');
+  providers = signal<string[]>([]);
 
-  constructor(private authService: AuthService, private router: Router) {}
+  constructor(private authService: AuthService, private router: Router, private route: ActivatedRoute) {}
+
+  ngOnInit(): void {
+    const errorCode = this.route.snapshot.queryParamMap.get('error');
+    if (errorCode) {
+      this.error.set(OAUTH_ERROR_MESSAGES[errorCode] || 'Sign-in failed.');
+    }
+
+    this.authService.getProviders().subscribe({
+      next: (res) => this.providers.set(res.providers),
+      error: () => {} // Google button just stays hidden — dev login still works either way.
+    });
+  }
 
   onSubmit(): void {
     this.loading.set(true);

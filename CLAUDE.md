@@ -278,7 +278,7 @@ This is handled by `backend/docker-entrypoint.sh`
 - [ ] Add loading states throughout UI (chat/profile screens have basic pending states; not exhaustive)
 - [ ] Implement proper WebSocket reconnection (currently reconnects only on manual navigation back into a chat step)
 - [ ] Expand test coverage (Jest for backend, Jasmine/Karma for frontend — both wired up and enforced in CI as of `.github/workflows/ci.yml`, but only a handful of files have specs so far: `backend/src/models/flow-steps.ts`, `backend/src/middleware/validate.ts`, `backend/src/services/flow.service.ts`, `backend/src/utils/email-reply.ts`, `frontend/src/app/shared/utils/text.ts`, `frontend/src/app/core/flow/flow.service.ts`)
-- [ ] Add OIDC provider integration (Google, GitHub, LinkedIn) — dev-login bypass is the only working path today
+- [x] ~~Add OIDC provider integration~~ — Google is done (`google-auth-library`'s `OAuth2Client`, `/api/auth/google` + `/api/auth/google/callback` in `backend/src/routes/auth.routes.ts`/`services/auth.service.ts`; redirect URI is derived from `FRONTEND_URL`, see `.env.template`). GitHub/LinkedIn still not implemented — dev-login bypass remains the only working path for those
 - [x] ~~Real email delivery for the Step 3 email channel~~ — done via Resend; see the "Email gateway (real, via Resend)" note above
 - [ ] Scheduled nudges for stalled email threads — nudge is now really delivered by email once sent (see above), but it's still only composed on-demand when the candidate opens the inbox, not proactively by a background job
 - [ ] Employer-side onboarding, matching/discovery, share-link analytics — explicitly out of scope for v1 per the spec's Future Features section
