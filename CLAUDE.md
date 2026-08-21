@@ -9,7 +9,7 @@ AI-powered career profile platform that uses conversational AI to build comprehe
 **Tech Stack:**
 - Frontend: Angular 22 (standalone components — the default, no `standalone: true` needed — signals, new control flow syntax)
 - Backend: Express 5 + TypeScript, Node 24
-- Database: PostgreSQL 18 (Alpine) with Knex.js migrations
+- Database: PostgreSQL 18 via `pgvector/pgvector:pg18` (no official `-alpine` variant for pg18 yet) with Knex.js migrations; pgvector backs the `profile_evidence`/`conversation_evidence` semantic-search tables (see AI Integration below)
 - AI: `@langchain/openai` / `@langchain/anthropic` v1 directly (provider-agnostic via `backend/src/ai/llm.ts`, defaults to OpenAI gpt-4o) — the `langchain` meta-package isn't a dependency, we never needed it
 - Reverse Proxy: Nginx
 - Infrastructure: Docker Compose with multi-stage builds (Node 24-alpine)
@@ -75,6 +75,7 @@ Key tables:
 - `conversation_threads` - One row per (user, step) for Step 3 (app or email) and Step 5 (app only); tracks channel, message cap, silence/nudge state
 - `messages` - Unified message log for both chat and email-simulation channels — no separate "email profile"
 - `candidate_profiles` - Generated profile (`profile_data.insights` are narrative + evidence, never bare scores) + `correction_log` for the flag→re-ask loop
+- `profile_evidence` / `conversation_evidence` - pgvector-backed semantic-search tiers behind `search_candidate_evidence` (see AI Integration below): `profile_evidence` is distilled/authoritative (insights + STAR stories, wholesale-replaced on every profile regeneration so a corrected insight can never be outranked by a stale one); `conversation_evidence` is raw substrate (resume/logistics/deep-prompt chunks), historical and never overridden by a later correction
 - `sandbox_messages` - Step 7 practice-interview transcript; `flagged_gap`/`gap_note` feed back into the profile's `openQuestions`
 - `share_links` - Step 8 time-boxed tokens; no revocation beyond `expires_at`, no analytics (by design, see spec)
 
@@ -129,9 +130,11 @@ Implemented in `backend/src/ai/`, all going through the provider factory in `llm
 - `elicitation.chain.ts` - Shared adaptive-turn engine behind Step 3 (logistics, any channel) and Step 5 (deep prompts); returns `{ reply, extracted, complete }`
 - `reask.chain.ts` - Step 6 correction path: turns a flagged insight into one targeted follow-up question, never a direct edit
 - `profile-generator.chain.ts` - Synthesizes the Step 6 profile from resume + logistics + deep-prompt transcript; insights must cite evidence, never a bare score
-- `sandbox-chat.chain.ts` - Powers both Step 7 (candidate's own sandbox) and Step 8 (public share link) identically; "RAG" is whole-profile-as-context, no vector store
+- `sandbox-chat.chain.ts` - Powers both Step 7 (candidate's own sandbox) and Step 8 (public share link) identically; default context is still whole-profile-as-context (the compact digest covers most questions), with `search_candidate_evidence` (see below) as an on-demand fallback rather than a vector store stuffed into every turn
 
-**Pattern:** Load context (resume, progress, chat/message history) → LLM call (structured output via zod where the result feeds persistence) → Extract/evaluate → Persist → Update progress
+**Pattern:** Load context (resume, progress, chat/message history — windowed to the most recent `config.flow.elicitationHistoryWindow`/`sandboxHistoryWindow` messages, not full unbounded replay) → LLM call (structured output via zod where the result feeds persistence) → Extract/evaluate → Persist → Update progress
+
+**Evidence retrieval (`embeddings.ts` + `evidence-search.tool.ts` + `services/evidence.service.ts`):** pgvector-backed semantic search over the `profile_evidence`/`conversation_evidence` tables (see Database Patterns above), exposed to `sandbox-chat.chain.ts` as an LLM-invocable tool (`search_candidate_evidence`) via a new non-streaming `resolveToolCall` helper in `llm.ts`, rather than being included in every turn's context by default. `EvidenceService.search` is two-phase and distilled-preferred: it queries `profile_evidence` first and only reaches into `conversation_evidence` to fill out remaining results, ranking distilled hits ahead of raw ones regardless of relative similarity score. Embeddings are a deliberate exception to the provider-agnostic principle above — Anthropic has no embeddings API, so `embeddings.ts` always goes through OpenAI (`EMBEDDINGS_API_KEY`, falling back to `LLM_API_KEY` only when `LLM_PROVIDER=openai`) regardless of the configured chat provider.
 
 ## Onboarding Flow
 
