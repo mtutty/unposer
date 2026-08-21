@@ -1,0 +1,52 @@
+# Production reverse proxy — terminates TLS using the Let's Encrypt cert and
+# forwards everything to the frontend container, which serves the built
+# Angular app and itself proxies /api and /ws on to the api container (see
+# nginx/nginx.conf). ${DOMAIN_NAME} is substituted from the environment by
+# the entrypoint command in docker-compose.production.yml; all other nginx
+# variables (e.g. $host) are left intact for nginx itself to expand.
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name ${DOMAIN_NAME};
+
+    # Let's Encrypt HTTP-01 challenge.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN_NAME};
+
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    location / {
+        proxy_pass http://frontend:80;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket passthrough — frontend forwards /ws on to the api
+        # container, but this first hop needs the Upgrade/Connection
+        # headers relayed too, or the handshake never gets that far.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 86400;
+    }
+}

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# Starts (or ensures running) the full unposer production stack from
+# whatever images are already built. Does not pull code or rebuild — use
+# this after a reboot, or after building by hand. See update-unposer for
+# the pull-latest-and-rebuild path used by cron.
+#
+# Usage: ./run-unposer
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/unposer-common.sh"
+
+echo "### Starting unposer stack ..."
+"${COMPOSE[@]}" up -d "${PROD_SERVICES[@]}"
+
+echo
+"${COMPOSE[@]}" ps

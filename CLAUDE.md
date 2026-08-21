@@ -18,7 +18,7 @@ AI-powered career profile platform that uses conversational AI to build comprehe
 
 ```bash
 # Initial setup
-cp .env.example .env              # Configure LLM_API_KEY
+cp .env.template .env             # Configure LLM_API_KEY
 docker-compose up -d              # Start all services (migrations run automatically)
 
 # Access
@@ -178,12 +178,32 @@ docker-compose up -d  # Uses docker-compose.override.yml automatically
 - Source mounted as volumes
 
 ### Production Mode
+Real deployment (unposer.com) — not something you run ad hoc from a local
+checkout. `docker-compose.yml` alone (skipping the override file) is
+**not** a supported production mode: it still binds the dev-shaped `nginx`
+service to host port 80 with no TLS. Production layers
+`docker-compose.production.yml` on top instead, which adds a new
+`nginx-proxy` service (Let's Encrypt via certbot) in front of the same
+`frontend`/`api`/`postgres` services. The base `nginx` service must be
+left out of the service list explicitly — Compose merges `ports` across
+files rather than letting an override clear it, so there's no way to
+override `nginx` down to "unpublished"; naming the services you want is
+the only reliable fix (`infra/run-unposer` / `infra/update-unposer` do
+this already):
 ```bash
-docker-compose -f docker-compose.yml up -d  # Skip override file
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+  --env-file .env up -d api postgres frontend nginx-proxy certbot
 ```
-- Angular built and served from nginx
-- Only port 80 exposed
+- Angular built and served from the `frontend` container's own nginx
+  (`nginx/nginx.conf`), which also proxies `/api` and `/ws` to `api`
+- `nginx-proxy` only terminates TLS and forwards everything to `frontend`
+  — see `infra/nginx/prod.conf.template`
+- Only ports 80/443 exposed
 - Multi-stage Dockerfile produces optimized images
+- First run on a fresh host needs `infra/init-letsencrypt.sh` before
+  anything else — see `infra/README.md` for the full runbook (server
+  layout, `.env` setup, SSL bootstrap, and the CI-driven `deploy` branch
+  that `infra/update-unposer` polls)
 
 ### Making Changes
 1. Source code changes auto-reload in dev mode

@@ -1,0 +1,65 @@
+name: CI
+
+# Quality gate for deployment: the `deploy` branch (which the production
+# server polls via infra/update-unposer, see infra/README.md) only ever
+# moves when a push to `main` passes the backend and frontend build jobs
+# below. Nothing pushes to `deploy` directly.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      # No tests exist yet (see CLAUDE.md Known TODOs) — --passWithNoTests
+      # keeps this green today and starts enforcing them the moment the
+      # first *.test.ts file lands, with no workflow change needed.
+      - run: npm test -- --passWithNoTests
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  # Fast-forwards `deploy` to this commit. Only runs for actual pushes to
+  # main (not PRs), and only once both build jobs above succeed.
+  promote:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git push origin HEAD:deploy
