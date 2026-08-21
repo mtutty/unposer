@@ -1,11 +1,13 @@
 import { z } from 'zod';
-import { streamWithTemperatureFallback, structuredCall } from './llm';
+import { resolveToolCall, streamWithTemperatureFallback, structuredCall } from './llm';
+import { buildEvidenceSearchTool } from './evidence-search.tool';
 import { AppError, ProfileData, SandboxCitation } from '../types';
 
 export interface SandboxChatParams {
   profile: ProfileData;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
   question: string;
+  userId: string;
 }
 
 /** Just the profile data, no framing — shared between the "answer as the candidate" system prompt
@@ -43,28 +45,52 @@ function buildSandboxSystemPrompt(profile: ProfileData): string {
  * the same function and the same context, because it must be "the exact same chat + RAG
  * experience" per spec, not a separate recruiter-facing view.
  *
- * "RAG" here is whole-profile-as-context: the approved profile is small enough that a vector
- * store buys nothing over just putting it in the system prompt.
+ * The profile digest (describeProfile above) is always the default context — it's small enough
+ * that most questions never need more. When it isn't enough, search_candidate_evidence (see
+ * evidence-search.tool.ts) gives the model an on-demand path to the fuller evidence store
+ * (profile_evidence + conversation_evidence) instead of that store being stuffed into every
+ * turn's context. Checking for that need costs one extra non-streaming round trip on *every*
+ * turn, even the common one where it turns out not to be needed — a real cost, not "free," and
+ * worth revisiting (e.g. binding tools directly to the streaming call and inspecting the
+ * accumulated response) if it proves too costly in practice; kept as the straightforward,
+ * safe-to-reason-about version for now, matching identifySandboxCitations' existing precedent of
+ * a separate call rather than mixing structured/tool resolution into one stream.
  *
- * Streams the reply chunk by chunk rather than resolving with the full string — this is the one
- * chat in the app where the candidate/recruiter holds the conversational initiative and the AI's
- * reply is what most of a turn is spent waiting on, so perceived latency actually matters here
- * (contrast with elicitation/reask, where the human is mid-thought as often as not). See
- * sandbox.routes.ts, which forwards each chunk to the client as it arrives.
+ * Streams the *final* reply chunk by chunk rather than resolving with the full string — this is
+ * the one chat in the app where the candidate/recruiter holds the conversational initiative and
+ * the AI's reply is what most of a turn is spent waiting on, so perceived latency actually
+ * matters here (contrast with elicitation/reask, where the human is mid-thought as often as
+ * not). See sandbox.routes.ts, which forwards each chunk to the client as it arrives.
  */
 export async function* streamSandboxChat(params: SandboxChatParams): AsyncGenerator<string> {
-  const { profile, history, question } = params;
+  const { profile, history, question, userId } = params;
   const system = buildSandboxSystemPrompt(profile);
+  const baseMessages = [
+    { role: 'system', content: system },
+    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: 'human', content: question }
+  ];
 
   try {
-    yield* streamWithTemperatureFallback(
-      [
-        { role: 'system', content: system },
-        ...history.map((m) => ({ role: m.role, content: m.content })),
-        { role: 'human', content: question }
-      ],
-      0.5
-    );
+    const evidenceTool = buildEvidenceSearchTool(userId);
+    const toolCheck = await resolveToolCall(baseMessages, [evidenceTool], 0.5);
+
+    let messages = baseMessages;
+    if (toolCheck.tool_calls && toolCheck.tool_calls.length > 0) {
+      const results = await Promise.all(toolCheck.tool_calls.map((call: any) => evidenceTool.invoke(call)));
+      const evidenceContext = results.map((r: any) => (typeof r === 'string' ? r : r.content)).join('\n\n');
+
+      // Folded in as extra context ahead of the question, not replayed as a literal
+      // assistant-tool-call/tool-result exchange — the model doesn't need to see its own prior
+      // tool invocation, just the evidence it asked for.
+      messages = [
+        ...baseMessages.slice(0, -1),
+        { role: 'system', content: `Additional candidate evidence retrieved for this question:\n\n${evidenceContext}` },
+        baseMessages[baseMessages.length - 1]
+      ];
+    }
+
+    yield* streamWithTemperatureFallback(messages, 0.5);
   } catch (error: any) {
     throw new AppError('LLM_ERROR', `AI request failed: ${error.message || 'unknown error'}`, 502);
   }

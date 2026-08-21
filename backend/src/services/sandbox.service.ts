@@ -1,5 +1,6 @@
 import { db } from '../db/connection';
 import { AppError, ProfileData, SandboxCitation, SandboxMessage } from '../types';
+import { config } from '../config';
 
 /**
  * Step 7 — and, via the identical sandbox-chat chain, Step 8's public share link. Both talk to
@@ -10,6 +11,17 @@ import { AppError, ProfileData, SandboxCitation, SandboxMessage } from '../types
 export class SandboxService {
   async getHistory(userId: string): Promise<SandboxMessage[]> {
     return db('sandbox_messages').where({ user_id: userId }).orderBy('created_at', 'asc');
+  }
+
+  /** Same as getHistory, but capped to the most recent `limit` messages — used only for what
+   *  actually gets sent to the LLM each turn (see beginMessage below), not the GET /sandbox route
+   *  that shows the candidate their full history. sandbox_messages has no thread/cap concept the
+   *  way conversation_threads does, so this is the only bound on per-turn context size; the
+   *  profile digest + evidence-search tool (see sandbox-chat.chain.ts) carry durable memory
+   *  beyond this window, not raw replay. */
+  async getRecentHistory(userId: string, limit: number): Promise<SandboxMessage[]> {
+    const rows = await db('sandbox_messages').where({ user_id: userId }).orderBy('created_at', 'desc').limit(limit);
+    return rows.reverse();
   }
 
   /**
@@ -30,8 +42,9 @@ export class SandboxService {
     await db('sandbox_messages').insert({ user_id: userId, role: 'user', content });
 
     // Includes the row just inserted above — drop it since the chain takes it separately as
-    // `question`, not as the last turn of `history`.
-    const history = await this.getHistory(userId);
+    // `question`, not as the last turn of `history`. Windowed rather than the full unbounded
+    // history — see getRecentHistory above.
+    const history = await this.getRecentHistory(userId, config.flow.sandboxHistoryWindow);
     return {
       profile: profile.profile_data,
       history: history.slice(0, -1).map((m) => ({ role: m.role, content: m.content }))

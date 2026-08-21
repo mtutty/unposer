@@ -32,7 +32,10 @@ services:
       - postgres
 
   postgres:
-    image: postgres:18-alpine
+    # pgvector-enabled image (no official -alpine variant for pg18 yet, hence the base-image
+    # switch from postgres:18-alpine) — backs profile_evidence/conversation_evidence's semantic
+    # search. See backend/src/db/migrations/20260820000001_enable_pgvector.ts.
+    image: pgvector/pgvector:pg18
     expose:
       - "5432"
     env_file:

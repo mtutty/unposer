@@ -3,6 +3,7 @@ import { AppError, Channel, ConversationThread, Message, ThreadStep } from '../t
 import { getStep, FlowStep } from '../models/flow-steps';
 import { runElicitationTurn } from '../ai/elicitation.chain';
 import { config } from '../config';
+import { EvidenceService } from './evidence.service';
 
 /** Areas the elicitation prompt should actually try to extract — excludes 'resume'-sourced areas
  *  (e.g. logistics's "Background" glyph), which are filled from the resume record, not the chat. */
@@ -22,6 +23,8 @@ export interface TurnOutcome {
  * app and email channels resolve to the same underlying state, per spec Step 4.
  */
 export class ConversationService {
+  private evidence = new EvidenceService();
+
   async getOrCreateThread(userId: string, step: ThreadStep, channel: Channel): Promise<ConversationThread> {
     const stepDef = getStep(step);
     if (!stepDef.channels.includes(channel)) {
@@ -51,6 +54,15 @@ export class ConversationService {
 
   async getHistory(userId: string, step: ThreadStep): Promise<Message[]> {
     return db('messages').where({ user_id: userId, step }).orderBy('created_at', 'asc');
+  }
+
+  /** Same as getHistory, but capped to the most recent `limit` messages — what actually gets
+   *  sent to the LLM each turn (see postUserMessage below). knownData (for logistics) and the
+   *  profile digest + evidence-search tool (for sandbox, see sandbox.service.ts) carry durable
+   *  memory beyond this window; raw history's job here is just recent conversational flow. */
+  async getRecentHistory(userId: string, step: ThreadStep, limit: number): Promise<Message[]> {
+    const rows = await db('messages').where({ user_id: userId, step }).orderBy('created_at', 'desc').limit(limit);
+    return rows.reverse();
   }
 
   /** Generates and persists the opening question if this thread has no messages yet. */
@@ -101,17 +113,19 @@ export class ConversationService {
       throw new AppError('THREAD_CAP_REACHED', 'This conversation has reached its length limit.', 400);
     }
 
-    await db('messages').insert({
-      thread_id: thread.id,
-      user_id: userId,
-      role: 'user',
-      content,
-      channel,
-      step
-    });
+    const [userMessage] = await db('messages')
+      .insert({
+        thread_id: thread.id,
+        user_id: userId,
+        role: 'user',
+        content,
+        channel,
+        step
+      })
+      .returning('*');
 
     const stepDef = getStep(step);
-    const priorHistory = await this.getHistory(userId, step);
+    const priorHistory = await this.getRecentHistory(userId, step, config.flow.elicitationHistoryWindow);
     const knownData = await this.loadKnownData(userId, step);
 
     const turn = await runElicitationTurn({
@@ -151,7 +165,22 @@ export class ConversationService {
       .returning('*');
 
     if (step === 'logistics' && turn.complete) {
-      await db('logistics_responses').where({ user_id: userId }).update({ status: 'complete', updated_at: new Date() });
+      const [logisticsRow] = await db('logistics_responses')
+        .where({ user_id: userId })
+        .update({ status: 'complete', updated_at: new Date() })
+        .returning('*');
+
+      // Indexes evidence for semantic retrieval in sandbox/share chat (see evidence.service.ts).
+      // Never gates thread completion on this.
+      this.evidence.indexLogisticsSubstrate(userId, logisticsRow.data).catch((error) => {
+        console.warn(`[conversation.service] evidence indexing failed for user ${userId}:`, error.message || error);
+      });
+    }
+
+    if (step === 'deep_prompts') {
+      this.evidence.indexDeepPromptSubstrate(userId, userMessage, assistantMessage).catch((error) => {
+        console.warn(`[conversation.service] evidence indexing failed for user ${userId}:`, error.message || error);
+      });
     }
 
     return { assistantMessage, complete: turn.complete, thread: updatedThread };

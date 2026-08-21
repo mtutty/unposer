@@ -1,6 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { BaseChatModel, BindToolsInput } from '@langchain/core/language_models/chat_models';
+import { AIMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import { config } from '../config';
 import { AppError } from '../types';
@@ -118,6 +119,31 @@ export async function invokeWithTemperatureFallback(
   temperature: number
 ) {
   return withTemperatureFallback((t) => getChatModel(t).invoke(messages), temperature);
+}
+
+/** Non-streaming bind-tools-and-invoke, same fallback treatment as its siblings — used where a
+ *  chain needs to give the model the option to call a tool (currently: sandbox-chat's
+ *  search_candidate_evidence, see ai/evidence-search.tool.ts) before committing to a final
+ *  answer. Deliberately not streamed: mixing streamed prose with tool-call resolution over one
+ *  stream is the same class of problem identifySandboxCitations already avoids by splitting
+ *  structured output into its own call — same fix, applied here. Returns the raw AIMessage;
+ *  caller inspects `.tool_calls`. */
+export async function resolveToolCall(
+  messages: Array<{ role: string; content: string }>,
+  tools: BindToolsInput[],
+  temperature: number
+): Promise<AIMessage> {
+  return withTemperatureFallback(async (t) => {
+    const model = getChatModel(t);
+    if (!model.bindTools) {
+      throw new AppError(
+        'LLM_ERROR',
+        `${config.llm.provider}/${config.llm.model} does not support tool calling.`,
+        502
+      );
+    }
+    return (await model.bindTools(tools).invoke(messages)) as AIMessage;
+  }, temperature);
 }
 
 /** AIMessageChunk.content can be a plain string or an array of provider content blocks (Anthropic

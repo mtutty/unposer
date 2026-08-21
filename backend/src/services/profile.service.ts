@@ -3,9 +3,11 @@ import { AppError, CandidateProfile, ProfileInsight } from '../types';
 import { generateCandidateProfile, ProfileGenerationInput } from '../ai/profile-generator.chain';
 import { generateReaskQuestion } from '../ai/reask.chain';
 import { ConversationService } from './conversation.service';
+import { EvidenceService } from './evidence.service';
 
 export class ProfileService {
   private conversation = new ConversationService();
+  private evidence = new EvidenceService();
 
   async getProfile(userId: string): Promise<CandidateProfile | null> {
     return (await db('candidate_profiles').where({ user_id: userId }).first()) || null;
@@ -61,6 +63,13 @@ export class ProfileService {
       .onConflict('user_id')
       .merge(['status', 'version', 'profile_data', 'approved_at'])
       .returning('*');
+
+    // Re-indexes the distilled evidence tier for semantic retrieval in sandbox/share chat (see
+    // evidence.service.ts) — wholesale replace, so a since-corrected insight can never outrank
+    // the current one. Never gates profile generation on this.
+    this.evidence.indexDistilledProfile(userId, profileData).catch((error) => {
+      console.warn(`[profile.service] evidence indexing failed for user ${userId}:`, error.message || error);
+    });
 
     return profile;
   }

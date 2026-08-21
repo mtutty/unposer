@@ -72,6 +72,16 @@ export class ShareService {
       throw new AppError('NOT_FOUND', 'This profile is no longer available.', 404);
     }
 
-    return runSandboxChat({ profile: profile.profile_data as ProfileData, history, question });
+    // Client-supplied history is already capped at 60 messages by zod (public.routes.ts) as a
+    // request-size guard on untrusted input; trim further to the same window the candidate's own
+    // sandbox uses — the recruiter chat gets no benefit from more raw context than that.
+    const trimmedHistory = history.slice(-config.flow.sandboxHistoryWindow);
+
+    return runSandboxChat({
+      profile: profile.profile_data as ProfileData,
+      history: trimmedHistory,
+      question,
+      userId: link.user_id
+    });
   }
 }

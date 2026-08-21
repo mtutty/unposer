@@ -4,6 +4,7 @@ import mammoth from 'mammoth';
 import { db } from '../db/connection';
 import { AppError, Resume, ResumeStructuredData } from '../types';
 import { parseResume } from '../ai/resume-parser.chain';
+import { EvidenceService } from './evidence.service';
 
 const emptyStructuredData: ResumeStructuredData = {
   contact: { email: '', phone: '', location: '', linkedin: '' },
@@ -15,6 +16,8 @@ const emptyStructuredData: ResumeStructuredData = {
 };
 
 export class ResumeService {
+  private evidence = new EvidenceService();
+
   /** Standard path: upload a file, extract text, and run it through the AI parser. */
   async uploadAndParse(
     userId: string,
@@ -125,6 +128,13 @@ export class ResumeService {
     if (!resume) {
       throw new AppError('NOT_FOUND', 'Resume not found', 404);
     }
+
+    // Indexes evidence for semantic retrieval in sandbox/share chat (see evidence.service.ts).
+    // Never gates resume confirmation on this — embeddings being unconfigured or erroring is a
+    // retrieval-quality regression, not a reason to fail the flow.
+    this.evidence.indexResumeSubstrate(userId, resume.id, structuredData).catch((error) => {
+      console.warn(`[resume.service] evidence indexing failed for user ${userId}:`, error.message || error);
+    });
 
     return resume;
   }

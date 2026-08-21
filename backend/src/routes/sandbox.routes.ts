@@ -48,7 +48,7 @@ router.post('/message', requireAuth, validate(messageSchema), async (req: AuthRe
     });
 
     let full = '';
-    for await (const chunk of streamSandboxChat({ profile, history, question: req.body.content })) {
+    for await (const chunk of streamSandboxChat({ profile, history, question: req.body.content, userId })) {
       full += chunk;
       res.write(JSON.stringify({ type: 'delta', text: chunk }) + '\n');
     }
@@ -58,7 +58,7 @@ router.post('/message', requireAuth, validate(messageSchema), async (req: AuthRe
     res.write(JSON.stringify({ type: 'done', message: assistantMessage }) + '\n');
 
     try {
-      const citations = await identifySandboxCitations({ profile, history, question: req.body.content, answer: full });
+      const citations = await identifySandboxCitations({ profile, history, question: req.body.content, answer: full, userId });
       await sandboxService.saveCitations(assistantMessage.id, citations);
       res.write(JSON.stringify({ type: 'citations', messageId: assistantMessage.id, citations }) + '\n');
     } catch (citationError) {

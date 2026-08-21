@@ -12,6 +12,17 @@ export const config = {
     apiKey: process.env.LLM_API_KEY || ''
   },
 
+  // Anthropic has no embeddings API, so this is independent of `llm` above — always OpenAI
+  // regardless of LLM_PROVIDER. Falls back to LLM_API_KEY only when that's already an OpenAI key
+  // (i.e. LLM_PROVIDER=openai); otherwise a dedicated EMBEDDINGS_API_KEY is required. See
+  // ai/embeddings.ts.
+  embeddings: {
+    apiKey:
+      process.env.EMBEDDINGS_API_KEY ||
+      (process.env.LLM_PROVIDER !== 'anthropic' ? process.env.LLM_API_KEY : '') ||
+      ''
+  },
+
   session: {
     secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
     expiryDays: 7
@@ -46,6 +57,13 @@ export const config = {
     emailThreadCap: 30,
     emailSilenceHours: 48,
     shareLinkDefaultDays: 14,
-    shareLinkMaxDays: 60
+    shareLinkMaxDays: 60,
+    // How much raw message history gets sent to the LLM per elicitation/sandbox turn (messages,
+    // not tokens) — a recency window, not a hard thread-length limit (thread_cap/no-cap-at-all
+    // still govern how long a conversation can actually get). Durable "memory" beyond this window
+    // comes from knownData (logistics) or the profile digest + evidence-search tool (sandbox),
+    // not from replaying the full raw transcript. See conversation.service.ts/sandbox.service.ts.
+    elicitationHistoryWindow: 20,
+    sandboxHistoryWindow: 20
   }
 };
