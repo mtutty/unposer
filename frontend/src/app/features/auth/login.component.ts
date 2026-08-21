@@ -3,11 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 
-// Friendly text for the ?error= codes auth.routes.ts's /google/callback redirects back with.
+// Friendly text for the ?error= codes auth.routes.ts's /<provider>/callback routes redirect
+// back with — same codes regardless of which provider (see registerOidcRoutes there).
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
   access_denied: 'Sign-in was cancelled.',
   oauth_state_mismatch: 'Your sign-in session expired — please try again.',
-  oauth_failed: 'Google sign-in failed. Please try again, or use dev login below.'
+  oauth_failed: 'Sign-in failed. Please try again, or use dev login below.'
 };
 
 @Component({
@@ -33,6 +34,11 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 
         @if (providers().includes('google')) {
           <a class="btn btn-secondary" href="/api/auth/google">Continue with Google</a>
+        }
+        @if (providers().includes('github')) {
+          <a class="btn btn-secondary" href="/api/auth/github">Continue with GitHub</a>
+        }
+        @if (providers().includes('google') || providers().includes('github')) {
           <p class="meta divider"><span>or</span></p>
         }
 

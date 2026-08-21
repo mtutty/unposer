@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { AuthService } from '../services/auth.service';
 import { validate } from '../middleware/validate';
 import { config } from '../config';
+import type { User } from '../types';
 import { z } from 'zod';
 
 const router = Router();
@@ -39,64 +40,91 @@ router.post('/dev-login', validate(devLoginSchema), async (req, res, next) => {
   }
 });
 
-// Kick off Google sign-in: redirect to Google's consent screen. The registered "Authorized
-// redirect URI" in Google Cloud Console must exactly match what auth.service.ts's
-// googleRedirectUri() derives from FRONTEND_URL — see that file's comment for the exact values.
-router.get('/google', (req, res) => {
-  if (!config.oidc.google.clientId) {
-    res.status(404).json({ error: { code: 'NOT_CONFIGURED', message: 'Google sign-in is not configured' } });
-    return;
-  }
+/**
+ * Registers the two-route pattern every OIDC-ish provider needs: GET /:provider (redirect to
+ * their consent screen, with a CSRF state cookie scoped to just this provider's path so
+ * concurrently-registered providers can't collide) and GET /:provider/callback (verify state,
+ * exchange the code via `login`, set session_token, redirect back to the app). The registered
+ * "Authorized redirect URI" on the provider's side must exactly match what that provider's
+ * `<provider>RedirectUri()` in auth.service.ts derives from FRONTEND_URL — see those comments.
+ */
+function registerOidcRoutes(
+  provider: string,
+  isConfigured: () => boolean,
+  getAuthUrl: (state: string) => string,
+  login: (code: string) => Promise<{ token: string; user: User }>
+) {
+  const cookiePath = `/api/auth/${provider}`;
 
-  const state = crypto.randomUUID();
-  res.cookie(OAUTH_STATE_COOKIE, state, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax', // must survive Google's cross-site redirect back to /google/callback
-    path: '/api/auth/google',
-    maxAge: 10 * 60 * 1000 // 10 minutes — only needs to live through the round trip to Google and back
-  });
+  router.get(`/${provider}`, (req, res) => {
+    if (!isConfigured()) {
+      res.status(404).json({ error: { code: 'NOT_CONFIGURED', message: `${provider} sign-in is not configured` } });
+      return;
+    }
 
-  res.redirect(authService.getGoogleAuthUrl(state));
-});
-
-// Google redirects here after consent (or cancellation/failure).
-router.get('/google/callback', async (req, res) => {
-  const redirectTo = (path: string) => res.redirect(`${config.frontendUrl}${path}`);
-
-  if (req.query.error) {
-    // User cancelled the consent screen, or Google itself rejected the request.
-    res.clearCookie(OAUTH_STATE_COOKIE, { path: '/api/auth/google' });
-    redirectTo('/login?error=access_denied');
-    return;
-  }
-
-  const state = req.query.state;
-  const cookieState = req.cookies[OAUTH_STATE_COOKIE];
-  res.clearCookie(OAUTH_STATE_COOKIE, { path: '/api/auth/google' });
-
-  if (!state || !cookieState || state !== cookieState) {
-    redirectTo('/login?error=oauth_state_mismatch');
-    return;
-  }
-
-  try {
-    const code = req.query.code as string;
-    const { token, user } = await authService.googleLogin(code);
-
-    res.cookie('session_token', token, {
+    const state = crypto.randomUUID();
+    res.cookie(OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      sameSite: 'lax', // must survive the provider's cross-site redirect back to /callback
+      path: cookiePath,
+      maxAge: 10 * 60 * 1000 // 10 minutes — only needs to live through the round trip and back
     });
 
-    console.log(`[auth.routes] Google sign-in: ${user.email}`);
-    redirectTo('/dashboard');
-  } catch (error: any) {
-    console.error('[auth.routes] Google sign-in failed:', error.message || error);
-    redirectTo('/login?error=oauth_failed');
-  }
-});
+    res.redirect(getAuthUrl(state));
+  });
+
+  router.get(`/${provider}/callback`, async (req, res) => {
+    const redirectTo = (path: string) => res.redirect(`${config.frontendUrl}${path}`);
+
+    if (req.query.error) {
+      // User cancelled the consent screen, or the provider itself rejected the request.
+      res.clearCookie(OAUTH_STATE_COOKIE, { path: cookiePath });
+      redirectTo('/login?error=access_denied');
+      return;
+    }
+
+    const state = req.query.state;
+    const cookieState = req.cookies[OAUTH_STATE_COOKIE];
+    res.clearCookie(OAUTH_STATE_COOKIE, { path: cookiePath });
+
+    if (!state || !cookieState || state !== cookieState) {
+      redirectTo('/login?error=oauth_state_mismatch');
+      return;
+    }
+
+    try {
+      const code = req.query.code as string;
+      const { token, user } = await login(code);
+
+      res.cookie('session_token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+
+      console.log(`[auth.routes] ${provider} sign-in: ${user.email}`);
+      redirectTo('/dashboard');
+    } catch (error: any) {
+      console.error(`[auth.routes] ${provider} sign-in failed:`, error.message || error);
+      redirectTo('/login?error=oauth_failed');
+    }
+  });
+}
+
+registerOidcRoutes(
+  'google',
+  () => !!config.oidc.google.clientId,
+  (state) => authService.getGoogleAuthUrl(state),
+  (code) => authService.googleLogin(code)
+);
+
+registerOidcRoutes(
+  'github',
+  () => !!config.oidc.github.clientId,
+  (state) => authService.getGithubAuthUrl(state),
+  (code) => authService.githubLogin(code)
+);
 
 // Logout
 router.post('/logout', async (req, res, next) => {

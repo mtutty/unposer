@@ -25,6 +25,77 @@ function getGoogleClient(): OAuth2Client {
   return googleClient;
 }
 
+// Same reasoning as googleRedirectUri() above.
+function githubRedirectUri(): string {
+  return `${config.frontendUrl}/api/auth/github/callback`;
+}
+
+// GitHub's REST API 403s any request with no User-Agent header.
+const GITHUB_USER_AGENT = 'unposer-app';
+
+interface GithubTokenResponse {
+  access_token?: string;
+  error?: string;
+  error_description?: string;
+}
+interface GithubProfile {
+  id: number;
+  login: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+}
+interface GithubEmail {
+  email: string;
+  primary: boolean;
+  verified: boolean;
+}
+
+/**
+ * Finds the existing (provider, subject) user and refreshes their display data, or creates a
+ * new one. Shared by googleLogin/githubLogin — the only OIDC-specific work happens before this
+ * (extracting sub/email/name/avatar from whatever shape that provider hands back).
+ */
+async function upsertOidcUser(params: {
+  provider: string;
+  subject: string;
+  email: string;
+  name: string;
+  avatarUrl: string | null;
+}): Promise<User> {
+  let user = await db('users').where({ oidc_provider: params.provider, oidc_subject: params.subject }).first();
+
+  if (user) {
+    // Display data can go stale between logins (name/photo changes) — refresh it each time.
+    [user] = await db('users')
+      .where({ id: user.id })
+      .update({ name: params.name || user.name, avatar_url: params.avatarUrl || user.avatar_url, updated_at: new Date() })
+      .returning('*');
+    return user;
+  }
+
+  try {
+    [user] = await db('users')
+      .insert({
+        email: params.email,
+        name: params.name || params.email,
+        avatar_url: params.avatarUrl,
+        oidc_provider: params.provider,
+        oidc_subject: params.subject
+      })
+      .returning('*');
+    return user;
+  } catch (err: any) {
+    if (err.code === '23505') {
+      // users.email is globally unique — this email already belongs to a different account
+      // (e.g. a dev-created one, or a different provider). No account-linking policy exists
+      // yet, so surface it clearly rather than crashing with a raw constraint-violation error.
+      throw new AppError('EMAIL_IN_USE', 'An account with this email already exists', 409);
+    }
+    throw err;
+  }
+}
+
 export class AuthService {
   getAvailableProviders(): string[] {
     const providers = ['dev'];
@@ -60,35 +131,79 @@ export class AuthService {
       throw new AppError('OAUTH_ERROR', 'Google ID token missing required claims', 502);
     }
 
-    let user = await db('users').where({ oidc_provider: 'google', oidc_subject: payload.sub }).first();
+    const user = await upsertOidcUser({
+      provider: 'google',
+      subject: payload.sub,
+      email: payload.email,
+      name: payload.name || payload.email,
+      avatarUrl: payload.picture || null
+    });
 
-    if (user) {
-      // Display data can go stale between logins (name/photo changes) — refresh it each time.
-      [user] = await db('users')
-        .where({ id: user.id })
-        .update({ name: payload.name || user.name, avatar_url: payload.picture || user.avatar_url, updated_at: new Date() })
-        .returning('*');
-    } else {
-      try {
-        [user] = await db('users')
-          .insert({
-            email: payload.email,
-            name: payload.name || payload.email,
-            avatar_url: payload.picture || null,
-            oidc_provider: 'google',
-            oidc_subject: payload.sub
-          })
-          .returning('*');
-      } catch (err: any) {
-        if (err.code === '23505') {
-          // users.email is globally unique — this email already belongs to a different account
-          // (e.g. a dev-created one). No account-linking policy exists yet, so surface it
-          // clearly rather than crashing with a raw constraint-violation error.
-          throw new AppError('EMAIL_IN_USE', 'An account with this email already exists', 409);
-        }
-        throw err;
+    const session = await this.createSession(user.id);
+    return { token: session.token, user };
+  }
+
+  /** state: same CSRF role as getGoogleAuthUrl's — see the oauth_state cookie in auth.routes.ts. */
+  getGithubAuthUrl(state: string): string {
+    const params = new URLSearchParams({
+      client_id: config.oidc.github.clientId,
+      redirect_uri: githubRedirectUri(),
+      scope: 'read:user user:email',
+      state
+    });
+    return `https://github.com/login/oauth/authorize?${params.toString()}`;
+  }
+
+  async githubLogin(code: string): Promise<{ token: string; user: User }> {
+    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        client_id: config.oidc.github.clientId,
+        client_secret: config.oidc.github.clientSecret,
+        code,
+        redirect_uri: githubRedirectUri()
+      })
+    });
+    const tokenBody = (await tokenRes.json()) as GithubTokenResponse;
+    if (!tokenRes.ok || !tokenBody.access_token) {
+      throw new AppError('OAUTH_ERROR', `GitHub token exchange failed: ${tokenBody.error_description || tokenBody.error || tokenRes.status}`, 502);
+    }
+
+    const githubHeaders = {
+      Authorization: `Bearer ${tokenBody.access_token}`,
+      'User-Agent': GITHUB_USER_AGENT,
+      Accept: 'application/vnd.github+json'
+    };
+
+    const profileRes = await fetch('https://api.github.com/user', { headers: githubHeaders });
+    if (!profileRes.ok) {
+      throw new AppError('OAUTH_ERROR', `GitHub profile fetch failed: ${profileRes.status}`, 502);
+    }
+    const profile = (await profileRes.json()) as GithubProfile;
+
+    // GitHub omits `email` from /user when the account's email is private (common default) —
+    // /user/emails (needs the user:email scope) returns it regardless of that visibility setting
+    // since it's the authenticated user's own data.
+    let email: string | null = profile.email;
+    if (!email) {
+      const emailsRes = await fetch('https://api.github.com/user/emails', { headers: githubHeaders });
+      if (emailsRes.ok) {
+        const emails = (await emailsRes.json()) as GithubEmail[];
+        email = emails.find((e) => e.primary && e.verified)?.email || emails.find((e) => e.verified)?.email || emails[0]?.email || null;
       }
     }
+    if (!email) {
+      throw new AppError('OAUTH_ERROR', "Couldn't get an email address from GitHub — check the account has a verified email", 400);
+    }
+
+    const user = await upsertOidcUser({
+      provider: 'github',
+      subject: String(profile.id),
+      email,
+      name: profile.name || profile.login,
+      avatarUrl: profile.avatar_url || null
+    });
 
     const session = await this.createSession(user.id);
     return { token: session.token, user };
