@@ -10,7 +10,7 @@ import { AuthService } from '../../../core/auth/auth.service';
     <header class="topbar">
       <a routerLink="/dashboard" class="brand font-display">
         <span class="brand-mark" aria-hidden="true">✦</span>
-        Beyond the Resume
+        Unposer
       </a>
       @if (auth.currentUser(); as user) {
         <div class="user">

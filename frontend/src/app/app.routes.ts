@@ -9,10 +9,11 @@ import { ProfileReviewStepComponent } from './features/onboarding/profile/profil
 import { SandboxStepComponent } from './features/onboarding/sandbox/sandbox.component';
 import { ShareStepComponent } from './features/onboarding/share/share.component';
 import { PublicShareComponent } from './features/public-share/public-share.component';
-import { authGuard } from './core/auth/auth.guard';
+import { SplashComponent } from './features/splash/splash.component';
+import { authGuard, guestGuard } from './core/auth/auth.guard';
 
 export const routes: Routes = [
-  { path: '', redirectTo: '/dashboard', pathMatch: 'full' },
+  { path: '', component: SplashComponent, canActivate: [guestGuard] },
   { path: 'login', component: LoginComponent },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   {

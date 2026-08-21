@@ -18,10 +18,9 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
     <div class="screen">
       <div class="intro">
         <span class="stamp stamp-brass">v1 prototype</span>
-        <h1>Beyond the Resume</h1>
+        <h1>Unposer</h1>
         <p class="lede">
-          A career profile built from your stories, not a form — goals and logistics on your
-          schedule, live conversation for the parts that need it.
+          Welcome back. Sign in to pick up your career profile where you left off.
         </p>
       </div>
 

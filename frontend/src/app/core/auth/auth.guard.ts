@@ -16,3 +16,19 @@ export const authGuard: CanActivateFn = () => {
     catchError(() => of(router.createUrlTree(['/login'])))
   );
 };
+
+// Inverse of authGuard, for the public splash route: an already-signed-in visitor hitting `/`
+// goes straight to /dashboard instead of seeing marketing copy again.
+export const guestGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+
+  if (auth.currentUser()) {
+    return router.createUrlTree(['/dashboard']);
+  }
+
+  return auth.getCurrentUser().pipe(
+    map(() => router.createUrlTree(['/dashboard'])),
+    catchError(() => of(true))
+  );
+};
