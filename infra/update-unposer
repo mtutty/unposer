@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#
+# Pulls the latest commit from the `deploy` branch (which GitHub Actions
+# fast-forwards to `main` only after CI passes — see
+# .github/workflows/ci.yml) and rebuilds/restarts if anything changed.
+# A no-op when the checkout is already up to date, so it's safe to run
+# from cron on a fixed interval.
+#
+# Usage: ./update-unposer
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/unposer-common.sh"
+
+echo "### Fetching origin/deploy ..."
+git fetch origin deploy
+
+LOCAL="$(git rev-parse HEAD)"
+REMOTE="$(git rev-parse origin/deploy)"
+
+if [ "$LOCAL" = "$REMOTE" ]; then
+  echo "### Already up to date (${LOCAL:0:12}). Nothing to do."
+  exit 0
+fi
+
+echo "### Updating checkout: ${LOCAL:0:12} -> ${REMOTE:0:12} ..."
+git reset --hard origin/deploy
+
+echo "### Building images ..."
+"${COMPOSE[@]}" build "${PROD_SERVICES[@]}"
+
+echo "### Recreating services with updated images ..."
+"${COMPOSE[@]}" up -d --remove-orphans "${PROD_SERVICES[@]}"
+
+echo "### Pruning dangling images ..."
+docker image prune -f
+
+echo
+"${COMPOSE[@]}" ps

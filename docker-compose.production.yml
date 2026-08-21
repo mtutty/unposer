@@ -1,0 +1,77 @@
+# Production overlay for a real, internet-facing deployment.
+#
+# Layers on top of the base docker-compose.yml (NOT docker-compose.override.yml
+# — that file is dev-only and is never loaded alongside this one):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.production.yml \
+#     --env-file .env up -d api postgres frontend nginx-proxy certbot
+#
+# That explicit service list deliberately excludes the base file's `nginx`
+# service (the dev-mode edge proxy) — `nginx-proxy` below replaces its job.
+# It's excluded by name rather than overridden in place: Compose unions
+# `volumes`/`ports`/`depends_on` sequences across files instead of letting
+# a later file replace them (even `ports: []` here is treated as
+# "unspecified", not "clear the base list"), so there's no clean way to
+# override `nginx` down to "does nothing" — leaving it out of the service
+# list is the reliable fix. infra/run-unposer, infra/update-unposer, and
+# infra/init-letsencrypt.sh all use this same list; if you run
+# `docker compose ... up -d` with no service names, `nginx` comes up too
+# and fights `nginx-proxy` for host port 80.
+#
+# api/frontend/postgres need no other changes here — the base file already
+# builds frontend with `target: production` and only `expose`s (never
+# publishes) api/postgres ports. This adds `restart: unless-stopped` so the
+# stack comes back up after a host reboot.
+#
+# First run on a fresh host: use infra/init-letsencrypt.sh instead of
+# starting this stack directly — nginx-proxy will otherwise fail to start
+# because the certificate it references doesn't exist yet. See
+# infra/README.md.
+
+services:
+  # Reverse proxy that terminates TLS using the Let's Encrypt cert and
+  # forwards everything to the frontend container (which itself serves the
+  # built Angular app and proxies /api, /ws to api — see nginx/nginx.conf).
+  nginx-proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN_NAME: ${DOMAIN_NAME}
+    volumes:
+      - ./infra/nginx/prod.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "envsubst '$$DOMAIN_NAME' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf &&
+       nginx -g 'daemon off;'"
+    restart: unless-stopped
+
+  # Periodically renews the Let's Encrypt certificate. Initial issuance is
+  # handled by infra/init-letsencrypt.sh.
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done"
+    restart: unless-stopped
+
+  frontend:
+    restart: unless-stopped
+
+  api:
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+
+volumes:
+  certbot-conf:
+  certbot-www:
