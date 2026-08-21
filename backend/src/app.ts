@@ -19,6 +19,17 @@ import webhookRoutes from './routes/webhooks.routes';
 export function createApp() {
   const app = express();
 
+  // Every request path (dev's standalone nginx, prod's frontend-container nginx + the
+  // nginx-proxy/certbot hop in front of it) reaches `api` through nginx on the Docker-internal
+  // network, which sets X-Forwarded-For — but Express only honors that header from peers it's
+  // told to trust, and defaults to trusting none. Left unset, express-rate-limit refuses to key
+  // on X-Forwarded-For at all (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR) since trusting it blindly
+  // would let any client spoof its own rate-limit identity. 'loopback, linklocal, uniquelocal'
+  // trusts the header only when it arrives via a private/reserved-range peer (any Docker
+  // network hop, including multi-hop in prod) — never via a public IP, so a client hitting the
+  // dev-mode :3000 host port directly (bypassing nginx) can't spoof its way around rate limits.
+  app.set('trust proxy', 'loopback, linklocal, uniquelocal');
+
   // Security middleware
   app.use(helmet());
   app.use(cors({
