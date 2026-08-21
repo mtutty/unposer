@@ -218,6 +218,17 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml \
    docker-compose restart nginx
    ```
 
+**Testing:**
+```bash
+cd backend && npm test              # jest, runs *.test.ts under src/
+cd frontend && npm test             # ng test — interactive Chrome, watches
+cd frontend && npm run test:ci      # headless single-run, what CI uses
+```
+`.github/workflows/ci.yml` runs both (plus `npm run build` and a plain
+`docker build` of each Dockerfile) on every push/PR to `main`; only a
+passing push promotes `deploy`. See the Known TODOs entry below for current
+coverage — it's real but narrow, not comprehensive.
+
 **Auto-Migration on Startup:**
 The backend container automatically:
 - Waits for PostgreSQL to be ready
@@ -258,7 +269,7 @@ This is handled by `backend/docker-entrypoint.sh`
 - [ ] Add error boundary components
 - [ ] Add loading states throughout UI (chat/profile screens have basic pending states; not exhaustive)
 - [ ] Implement proper WebSocket reconnection (currently reconnects only on manual navigation back into a chat step)
-- [ ] Add tests (Jest for backend, Jasmine for frontend)
+- [ ] Expand test coverage (Jest for backend, Jasmine/Karma for frontend — both wired up and enforced in CI as of `.github/workflows/ci.yml`, but only a handful of files have specs so far: `backend/src/models/flow-steps.ts`, `backend/src/middleware/validate.ts`, `backend/src/services/flow.service.ts`, `frontend/src/app/shared/utils/text.ts`, `frontend/src/app/core/flow/flow.service.ts`)
 - [ ] Add OIDC provider integration (Google, GitHub, LinkedIn) — dev-login bypass is the only working path today
 - [ ] Real email delivery for the Step 3 email channel — it's currently simulated in-app (same `conversation_threads`/`messages` rows as the app channel, rendered as an inbox) rather than wired to actual SMTP/IMAP; see `backend/src/services/inbox.service.ts`
 - [ ] Scheduled nudges for stalled email threads — nudge is composed on-demand when the candidate opens the inbox, not by a background job
