@@ -85,6 +85,50 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml \
   pg_dump -U appuser appdb | gzip > /root/unposer/backups/appdb-$(date +%F).sql.gz
 ```
 
+## Inbound/outbound email (Resend)
+
+The Step 3 email channel is a real gateway, not just the in-app simulated
+inbox — see `backend/src/services/email.service.ts` (outbound) and
+`backend/src/routes/webhooks.routes.ts` (inbound). Both go through
+[Resend](https://resend.com). One-time setup, done once per environment
+(dev and prod need separate Resend domains/webhooks if you want isolated
+inboxes — the values below all come from `.env`):
+
+1. In the Resend dashboard, add and verify a domain dedicated to inbound
+   candidate replies (e.g. `reply.unposer.com` — keep it separate from
+   `DOMAIN_NAME`). Add the MX record Resend gives you at your DNS provider;
+   it must be the lowest-priority MX record on that (sub)domain.
+2. Create a webhook for the `email.received` event, endpoint URL
+   `https://unposer.com/api/webhooks/inbound-email`. Resend shows a signing
+   secret (`whsec_...`) once at creation — copy it.
+3. Set in `.env`:
+   - `RESEND_API_KEY` — from Resend's API Keys page (used for both sending
+     and fetching received-email bodies).
+   - `RESEND_WEBHOOK_SECRET` — the `whsec_...` secret from step 2.
+   - `EMAIL_INBOUND_DOMAIN` — the domain from step 1 (e.g.
+     `reply.unposer.com`).
+   - `EMAIL_FROM_ADDRESS` — the outbound "From" (e.g.
+     `Unposer <onboarding@unposer.com>`), on a domain also verified in
+     Resend for sending.
+
+Leaving `RESEND_API_KEY`/`RESEND_WEBHOOK_SECRET` unset keeps the channel
+simulated in-app only, same as before this was wired up — nothing else
+breaks.
+
+**Testing without a real inbound email:** `backend/src/scripts/simulate-inbound-email.ts`
+builds a validly-signed `email.received` payload (using the real
+`RESEND_WEBHOOK_SECRET` from `.env`) and can POST it straight at the
+webhook endpoint:
+
+```bash
+docker-compose exec api npm run simulate:inbound-email -- \
+  --user devuser@example.com --text "Remote only, staff level." --post
+```
+
+See the script's own header comment for the full flag reference, including
+`--email-id` for exercising the real Resend body-fetch path and for
+dedupe testing.
+
 ## Ongoing operation
 
 - **`run-unposer`** — starts the stack from whatever images are already

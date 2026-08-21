@@ -52,6 +52,21 @@ export const config = {
 
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
 
+  // Real email gateway (Resend, both inbound and outbound — see email.service.ts and
+  // webhooks.routes.ts). `enabled` is the safe-default gate, same pattern as devAuth.enabled:
+  // with no credentials configured (the out-of-the-box dev state) the webhook route no-ops and
+  // EmailService logs instead of calling Resend, so nothing breaks locally without a Resend
+  // account.
+  email: {
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    webhookSecret: process.env.RESEND_WEBHOOK_SECRET || '',
+    // Inbound subdomain Resend's MX record points at, e.g. "reply.unposer.com". Outbound
+    // Reply-To addresses and inbound-webhook token extraction both key off this.
+    inboundDomain: process.env.EMAIL_INBOUND_DOMAIN || '',
+    fromAddress: process.env.EMAIL_FROM_ADDRESS || 'Unposer <onboarding@resend.dev>',
+    enabled: !!(process.env.RESEND_API_KEY && process.env.RESEND_WEBHOOK_SECRET)
+  },
+
   flow: {
     // Step 4 email-thread bounds (open item in the spec, defaulted here for the prototype).
     emailThreadCap: 30,

@@ -149,6 +149,11 @@ export interface ConversationThread {
   thread_cap: number;
   last_message_at: Date | null;
   last_nudge_at: Date | null;
+  // Per-thread routing key for the real email gateway — see email.service.ts/webhooks.routes.ts
+  // and the migration that added these three columns.
+  inbound_token: string;
+  last_inbound_message_id: string | null;
+  last_outbound_message_id: string | null;
   created_at: Date;
   updated_at: Date;
 }

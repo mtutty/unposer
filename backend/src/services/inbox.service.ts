@@ -2,6 +2,7 @@ import { db } from '../db/connection';
 import { AppError, ConversationThread, Message } from '../types';
 import { config } from '../config';
 import { ConversationService } from './conversation.service';
+import { EmailService } from './email.service';
 
 export interface InboxView {
   thread: ConversationThread | null;
@@ -11,13 +12,16 @@ export interface InboxView {
 }
 
 /**
- * Simulated email channel for Step 3/4. There is no real mail server here — the "inbox" is an
- * in-app view over the same conversation_threads/messages rows the app-channel chat uses, styled
- * as a thread so the async affordance (reply when convenient, pick it back up from the app) is
- * real even though delivery isn't wired to actual SMTP/IMAP for this prototype.
+ * In-app view of the Step 3/4 email channel — the "inbox" is the same conversation_threads/
+ * messages rows the app-channel chat uses, styled as a thread so the candidate can pick it back
+ * up from the app exactly as it looks in their real inbox. Real delivery (the opener, nudges,
+ * and replies to genuine inbound email) goes through EmailService/webhooks.routes.ts; this class
+ * doesn't send email itself except by delegating to EmailService at the specific points where
+ * the candidate's real inbox needs to hear from us — see openThread/sendNudge below.
  */
 export class InboxService {
   private conversation = new ConversationService();
+  private email = new EmailService();
 
   async getInbox(userId: string): Promise<InboxView> {
     const thread = await db('conversation_threads').where({ user_id: userId, step: 'logistics' }).first();
@@ -42,11 +46,25 @@ export class InboxService {
     return { thread, messages, needsNudge, hoursSinceLastMessage };
   }
 
-  /** Opens the email thread, generating the first "email" if none exists yet. */
+  /** Opens the email thread, generating the first "email" if none exists yet — and, unlike a
+   *  reply typed into the in-app inbox (see `reply` below), actually sends that opener as a real
+   *  email: it's the candidate's only way to ever receive something to reply to in their real
+   *  inbox. */
   async openThread(userId: string): Promise<Message[]> {
-    return this.conversation.ensureOpeningMessage(userId, 'logistics', 'email');
+    const before = await this.conversation.getHistory(userId, 'logistics');
+    const messages = await this.conversation.ensureOpeningMessage(userId, 'logistics', 'email');
+
+    if (before.length === 0 && messages.length > 0) {
+      const thread = await this.conversation.getOrCreateThread(userId, 'logistics', 'email');
+      await this.email.deliver(thread, messages[0]);
+    }
+
+    return messages;
   }
 
+  /** A reply typed into the in-app inbox view. Deliberately stays in-app only — the response is
+   *  just returned here and rendered in the UI, never re-emailed — so the real inbox only ever
+   *  hears from us via the opener above, a genuine inbound-email reply, or a nudge. */
   async reply(userId: string, content: string) {
     return this.conversation.postUserMessage(userId, 'logistics', 'email', content);
   }
@@ -80,6 +98,10 @@ export class InboxService {
       .returning('*');
 
     await db('conversation_threads').where({ id: thread.id }).update({ last_nudge_at: new Date(), updated_at: new Date() });
+
+    // Nudging a stalled email thread only does anything if it actually reaches the candidate's
+    // real inbox — showing it in-app alone does nothing for someone who's gone silent on email.
+    await this.email.deliver(thread, message);
 
     return message;
   }

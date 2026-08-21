@@ -10,7 +10,8 @@
     "test": "jest",
     "migrate:latest": "knex migrate:latest",
     "migrate:rollback": "knex migrate:rollback",
-    "migrate:make": "knex migrate:make"
+    "migrate:make": "knex migrate:make",
+    "simulate:inbound-email": "ts-node src/scripts/simulate-inbound-email.ts"
   },
   "dependencies": {
     "@langchain/anthropic": "^1.5.4",
@@ -25,6 +26,8 @@
     "multer": "^2.2.0",
     "pdf-parse": "^1.1.4",
     "pg": "^8.23.0",
+    "resend": "^6.21.0",
+    "svix": "^1.99.1",
     "ws": "^8.21.3",
     "zod": "^4.4.3"
   },
