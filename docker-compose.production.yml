@@ -31,7 +31,7 @@
 services:
   # Reverse proxy that terminates TLS using the Let's Encrypt cert and
   # forwards everything to the frontend container (which itself serves the
-  # built Angular app and proxies /api, /ws to api — see nginx/nginx.conf).
+  # built Angular app and proxies /api, /ws to api — see frontend/nginx.conf).
   nginx-proxy:
     image: nginx:1.27-alpine
     depends_on:

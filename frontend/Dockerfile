@@ -29,8 +29,12 @@ FROM nginx:alpine AS production
 # Copy built Angular app
 COPY --from=build /app/dist/career-profile-frontend/browser /usr/share/nginx/html
 
-# Copy nginx configuration will be done via volume mount or COPY in docker-compose
-# This allows the container to be used with different nginx configs
+# Baked into the image rather than bind-mounted from docker-compose — this config never varies
+# by environment (unlike nginx/nginx.dev.conf, which only ever runs via the dev-mode standalone
+# `nginx` service in docker-compose.override.yml), so there's nothing to gain from making it
+# swappable at container-start time, and baking it in makes the built image actually
+# self-contained instead of depending on the deploy host's checkout having a matching file.
+COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 80
 

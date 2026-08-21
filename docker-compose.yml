@@ -1,10 +1,16 @@
 services:
+  # Dev-mode edge proxy only — has no config of its own here because it's not meant to run
+  # without docker-compose.override.yml, which is what supplies nginx/nginx.dev.conf (proxying
+  # to the Angular dev server + api). Plain `docker-compose up` always auto-loads that override,
+  # so this is the only way this service is actually started; production excludes it entirely by
+  # name in favor of nginx-proxy (see docker-compose.production.yml) instead of overriding it in
+  # place, for the same reason. `docker compose -f docker-compose.yml up` on its own — skipping
+  # the override — is not a supported invocation (same as for production, see CLAUDE.md); nginx
+  # would start here with no config mounted and fail.
   nginx:
     image: nginx:alpine
     ports:
       - "80:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - api
       - frontend
@@ -13,8 +19,6 @@ services:
     build:
       context: ./frontend
       target: production
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
 
   api:
     build:

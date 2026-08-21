@@ -36,10 +36,8 @@ docker-compose down -v            # Full reset (destroys data)
 ## Architecture Principles
 
 **Nginx Reverse Proxy:**
-- Production: Serves built Angular static files, proxies /api and /ws to backend
-- Development: Proxies to Angular dev server (hot-reload) and backend
-- Configuration: `nginx/nginx.conf` (prod), `nginx/nginx.dev.conf` (dev)
-- Automatic switching via `docker-compose.override.yml`
+- Production: the `frontend` container's own bundled nginx serves the built Angular static files and proxies /api and /ws to backend — config is `frontend/nginx.conf`, baked into the image at build time (`COPY` in `frontend/Dockerfile`'s production stage), not bind-mounted, since it never varies by environment
+- Development: a separate standalone `nginx` service (base `docker-compose.yml`) proxies to the Angular dev server (hot-reload) and backend — config is `nginx/nginx.dev.conf`, bind-mounted in by `docker-compose.override.yml` (the only thing that makes that service runnable; see the comment on it in `docker-compose.yml`)
 
 **Multi-Stage Builds:**
 - Frontend Dockerfile has 3 stages: development, build, production
@@ -198,7 +196,8 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml \
   --env-file .env up -d api postgres frontend nginx-proxy certbot
 ```
 - Angular built and served from the `frontend` container's own nginx
-  (`nginx/nginx.conf`), which also proxies `/api` and `/ws` to `api`
+  (`frontend/nginx.conf`, baked into the image — see Nginx Reverse Proxy
+  above), which also proxies `/api` and `/ws` to `api`
 - `nginx-proxy` only terminates TLS and forwards everything to `frontend`
   — see `infra/nginx/prod.conf.template`
 - Only ports 80/443 exposed
@@ -216,10 +215,16 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml \
    # Edit migration file
    docker-compose restart api  # Restart to auto-run new migration
    ```
-3. Nginx config changes require restart:
-   ```bash
-   docker-compose restart nginx
-   ```
+3. Nginx config changes:
+   - `nginx/nginx.dev.conf` (dev-mode standalone proxy) is bind-mounted — just restart:
+     ```bash
+     docker-compose restart nginx
+     ```
+   - `frontend/nginx.conf` (the frontend container's own production nginx) is baked into the
+     image — needs a rebuild, not just a restart:
+     ```bash
+     docker-compose build frontend && docker-compose up -d frontend
+     ```
 
 **Testing:**
 ```bash

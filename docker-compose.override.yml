@@ -2,6 +2,9 @@
 # Automatically loaded by docker-compose
 # Use this for local development with hot-reload
 services:
+  # The base docker-compose.yml's `nginx` service has no config of its own — this is the only
+  # place nginx/nginx.dev.conf gets mounted in, and this file is what makes that service
+  # actually runnable (see the comment on it in docker-compose.yml).
   nginx:
     volumes:
       - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
