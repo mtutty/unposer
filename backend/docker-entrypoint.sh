@@ -9,21 +9,20 @@ until nc -z postgres 5432; do
   sleep 1
 done
 
-echo "PostgreSQL is up - checking migrations..."
+echo "PostgreSQL is up - running migrations..."
 
-# Run migrations
-npx knex migrate:latest
-
-if [ $? -eq 0 ]; then
-  echo "Migrations completed successfully"
+if [ -f dist/db/migrate.js ]; then
+  # Production image: no ts-node/knex CLI/knexfile at runtime (ts-node is a
+  # devDependency, not installed here) — run migrations via the compiled JS
+  # API instead. See src/db/migrate.ts for why.
+  node dist/db/migrate.js
 else
-  echo "Migration failed!"
-  exit 1
+  # Dev image: full devDependencies installed, so the CLI can register
+  # ts-node against knexfile.ts and run the *.ts migrations directly.
+  npx knex migrate:latest
+  echo "Current migration status:"
+  npx knex migrate:status
 fi
-
-# Check migration status
-echo "Current migration status:"
-npx knex migrate:status
 
 echo "Starting application..."
 

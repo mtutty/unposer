@@ -34,7 +34,9 @@ const config: { [key: string]: Knex.Config } = {
     },
     migrations: {
       tableName: 'knex_migrations',
-      directory: './src/db/migrations'
+      // The production image only ever has the compiled dist/ tree at runtime
+      // (see backend/Dockerfile's production stage) — src/ isn't copied in.
+      directory: './dist/db/migrations'
     }
   }
 };

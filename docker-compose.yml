@@ -17,12 +17,12 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
 
   api:
-    build: ./backend
+    build:
+      context: ./backend
+      target: production
     expose:
       - "3000"
     volumes:
-      - ./backend:/app
-      - /app/node_modules
       - app_storage:/app/uploads
     env_file:
       - .env

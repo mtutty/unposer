@@ -18,8 +18,14 @@ services:
     command: ["npm", "start", "--", "--host", "0.0.0.0", "--poll", "2000", "--proxy-config", "proxy.conf.json"]
 
   api:
+    build:
+      context: ./backend
+      target: development
     ports:
       - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
 
   postgres:
     ports:
