@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#
+# Starts (or ensures running) the full gforge-crm production stack.
+#
+# Usage: ./run-crm
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/crm-common.sh"
+
+echo "### Starting gforge-crm stack ..."
+"${COMPOSE[@]}" up -d
+
+echo
+"${COMPOSE[@]}" ps
