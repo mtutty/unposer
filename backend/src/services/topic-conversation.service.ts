@@ -3,6 +3,7 @@ import { AppError, Channel, DimensionKey, Exchange, Message, TopicThread } from 
 import { getQuestion } from '../models/question-library';
 import { TopicSelectionService } from './topic-selection.service';
 import { DimensionScoringService } from './dimension-scoring.service';
+import { ScoringAggregationService } from './scoring-aggregation.service';
 import { EvidenceService } from './evidence.service';
 import { runTopicTurn } from '../ai/topic-elicitation.chain';
 import { computeOccasionId } from '../utils/occasion';
@@ -29,6 +30,7 @@ export interface TopicTurnOutcome {
 export class TopicConversationService {
   private selection = new TopicSelectionService();
   private scoring = new DimensionScoringService();
+  private aggregation = new ScoringAggregationService();
   private evidence = new EvidenceService();
 
   /** Returns the open thread's full exchange history, or opens a freshly-selected topic and
@@ -71,10 +73,9 @@ export class TopicConversationService {
 
     // Cheap per-exchange extraction (spec §9.2) — every dimension this question loads on (P or s),
     // same decoupling DimensionScoringService already documents: selection-layer concerns (which
-    // dimensions a question serves) stay in the question library, not hardcoded here. Never gates
-    // the turn on completion, same fire-and-forget pattern conversation.service.ts uses.
+    // dimensions a question serves) stay in the question library, not hardcoded here.
     const dimensions = Object.keys(question.dimensionLoads) as DimensionKey[];
-    this.scoring.extractAndPersist(userExchange.id, question.prompt, content, dimensions).catch((error) => {
+    const extraction = this.scoring.extractAndPersist(userExchange.id, question.prompt, content, dimensions).catch((error) => {
       console.warn(`[topic-conversation.service] evidence extraction failed for user ${userId}:`, error.message || error);
     });
 
@@ -88,6 +89,18 @@ export class TopicConversationService {
       await db('topic_thread')
         .where({ id: thread.id })
         .update({ status: 'closed', closed_at: new Date(), closed_by: turn.closedBy, updated_at: new Date() });
+
+      // Full re-score on topic-thread close (spec §9.2/Iteration 4) — awaited, unlike the
+      // extraction fire-and-forget above, for two reasons: it needs this turn's own extraction to
+      // have actually landed in dimension_evidence first (hence awaiting `extraction` here, where
+      // every other turn leaves it to run in the background), and it's cheap, DB-only arithmetic
+      // with no LLM call, so the added latency is negligible next to the round trip that already
+      // happened. Tier-transition re-scoring (the spec's other trigger point) has no tier engine
+      // to trigger from yet — Iteration 5's job, noted in the plan doc.
+      await extraction;
+      await this.aggregation.recomputeDimensions(userId, dimensions).catch((error) => {
+        console.warn(`[topic-conversation.service] score aggregation failed for user ${userId}:`, error.message || error);
+      });
     }
 
     return { assistantMessage: this.toMessage(assistantExchange, thread), complete: await this.isFlowStepComplete(userId) };

@@ -15,6 +15,7 @@ import sandboxRoutes from './routes/sandbox.routes';
 import shareRoutes from './routes/share.routes';
 import publicRoutes from './routes/public.routes';
 import webhookRoutes from './routes/webhooks.routes';
+import adminRoutes from './routes/admin.routes';
 
 export function createApp() {
   const app = express();
@@ -65,6 +66,7 @@ export function createApp() {
   app.use('/api/sandbox', sandboxRoutes);
   app.use('/api/share', shareRoutes);
   app.use('/api/public', publicRoutes);
+  app.use('/api/admin', adminRoutes);
 
   // Error handler (must be last)
   app.use(errorHandler);

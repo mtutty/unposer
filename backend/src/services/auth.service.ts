@@ -251,6 +251,10 @@ export class AuthService {
       })
       .returning('*');
 
+    // Single choke point for every login path (Google, GitHub, dev) — see each *Login method
+    // above, all of which end here — so last_login_at only needs updating in one place.
+    await db('users').where({ id: userId }).update({ last_login_at: new Date() });
+
     return session;
   }
 

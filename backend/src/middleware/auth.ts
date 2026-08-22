@@ -36,10 +36,27 @@ export async function requireAuth(
       throw new AppError('UNAUTHORIZED', 'User not found', 401);
     }
 
+    // Rejected app-wide, not just at admin routes — a suspended user (set via the admin user
+    // management screen) loses access to everything, same as a deleted/expired session would.
+    if (user.status === 'suspended') {
+      throw new AppError('ACCOUNT_SUSPENDED', 'This account has been suspended', 403);
+    }
+
     req.userId = user.id;
     req.user = user;
     next();
   } catch (error) {
     next(error);
   }
+}
+
+/** Chain after requireAuth on any admin-only route — relies on req.user already being populated.
+ *  See docs/calibration-console-spec.md for the higher-trust rater-access model this will need
+ *  once that subsystem is built; this is just the plain admin/user-management gate for now. */
+export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction): void {
+  if (req.user?.role !== 'admin') {
+    next(new AppError('FORBIDDEN', 'Admin access required', 403));
+    return;
+  }
+  next();
 }

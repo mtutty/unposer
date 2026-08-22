@@ -7,6 +7,9 @@ import { TopicSelectionService } from './topic-selection.service';
 jest.mock('./dimension-scoring.service');
 import { DimensionScoringService } from './dimension-scoring.service';
 
+jest.mock('./scoring-aggregation.service');
+import { ScoringAggregationService } from './scoring-aggregation.service';
+
 jest.mock('./evidence.service');
 import { EvidenceService } from './evidence.service';
 
@@ -66,6 +69,7 @@ describe('TopicConversationService', () => {
   const mockRunTopicTurn = runTopicTurn as jest.Mock;
   const mockSelectNext = TopicSelectionService.prototype.selectNextQuestion as jest.Mock;
   const mockExtractAndPersist = DimensionScoringService.prototype.extractAndPersist as jest.Mock;
+  const mockRecomputeDimensions = ScoringAggregationService.prototype.recomputeDimensions as jest.Mock;
   const mockIndexDeepPrompt = EvidenceService.prototype.indexDeepPromptSubstrate as jest.Mock;
 
   beforeEach(() => {
@@ -74,6 +78,7 @@ describe('TopicConversationService', () => {
     builder = makeBuilder();
     mockDb.mockReturnValue(builder);
     mockExtractAndPersist.mockResolvedValue([]);
+    mockRecomputeDimensions.mockResolvedValue([]);
     mockIndexDeepPrompt.mockResolvedValue(undefined);
   });
 
@@ -146,6 +151,7 @@ describe('TopicConversationService', () => {
       expect(mockExtractAndPersist).toHaveBeenCalledWith('ex-user', question.prompt, 'my answer', Object.keys(question.dimensionLoads));
       expect(mockIndexDeepPrompt).toHaveBeenCalled();
       expect(builder.update).not.toHaveBeenCalled(); // topic stays open
+      expect(mockRecomputeDimensions).not.toHaveBeenCalled(); // re-score only triggers on topic close (spec §9.2)
       expect(outcome).toEqual({
         assistantMessage: expect.objectContaining({ id: 'ex-assistant', content: 'Tell me more.' }),
         complete: true
@@ -163,6 +169,22 @@ describe('TopicConversationService', () => {
       await service.postUserMessage('user-1', 'app', "that's all I've got");
 
       expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'closed', closed_by: 'user' }));
+      // Full re-score (spec §9.2) fires for every dimension Q1 loads on, not just its primary.
+      expect(mockRecomputeDimensions).toHaveBeenCalledWith('user-1', Object.keys(getQuestion('Q1')!.dimensionLoads));
+    });
+
+    it('does not let a failed aggregation recompute break the turn', async () => {
+      builder.first.mockResolvedValueOnce(threadFixture({ question_id: 'Q1' }));
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
+      builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
+      mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it, thanks.', closeTopic: true, closedBy: 'model' });
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it, thanks.' })]);
+      builder.first.mockResolvedValueOnce({ n: '0' });
+      mockRecomputeDimensions.mockRejectedValueOnce(new Error('boom'));
+
+      const outcome = await service.postUserMessage('user-1', 'app', "that's all I've got");
+
+      expect(outcome.assistantMessage.content).toBe('Got it, thanks.');
     });
 
     it('reports the step incomplete until all four core questions are closed', async () => {

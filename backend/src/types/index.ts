@@ -2,6 +2,9 @@
 // Identity
 // ---------------------------------------------------------------------------
 
+export type UserRole = 'user' | 'admin';
+export type UserStatus = 'active' | 'suspended';
+
 export interface User {
   id: string;
   email: string;
@@ -9,6 +12,9 @@ export interface User {
   avatar_url: string | null;
   oidc_provider: 'google' | 'github' | 'linkedin' | 'facebook' | 'dev';
   oidc_subject: string;
+  role: UserRole;
+  status: UserStatus;
+  last_login_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }

@@ -10,12 +10,14 @@ import { SandboxStepComponent } from './features/onboarding/sandbox/sandbox.comp
 import { ShareStepComponent } from './features/onboarding/share/share.component';
 import { PublicShareComponent } from './features/public-share/public-share.component';
 import { SplashComponent } from './features/splash/splash.component';
-import { authGuard, guestGuard } from './core/auth/auth.guard';
+import { AdminUsersComponent } from './features/admin/admin-users.component';
+import { authGuard, guestGuard, adminGuard } from './core/auth/auth.guard';
 
 export const routes: Routes = [
   { path: '', component: SplashComponent, canActivate: [guestGuard] },
   { path: 'login', component: LoginComponent },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
+  { path: 'admin/users', component: AdminUsersComponent, canActivate: [adminGuard] },
   {
     path: 'onboarding',
     component: OnboardingShellComponent,
