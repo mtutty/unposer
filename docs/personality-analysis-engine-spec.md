@@ -53,7 +53,7 @@ Eleven continua, each a cross-framework synthesis (Big Five as the empirical spi
 
 ## 3. Question Library — Coverage Matrix
 
-Twenty-two existing questions, mapped to the dimensions each is most likely to load on. **P** = primary (question is designed to produce strong signal here). **s** = secondary (usable signal, lower weight).
+Twenty-two existing questions plus the seed, mapped to the dimensions each is most likely to load on. **P** = primary (question is designed to produce strong signal here). **s** = secondary (usable signal, lower weight). **Full question text is in Appendix A.**
 
 | # | Question (short name) | 1 ES | 2 SE | 3 DA | 4 AG | 5 CO | 6 OP | 7 CH | 8 TS | 9 DO | 10 MO | 11 WS |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -519,3 +519,145 @@ Carried forward from the scoring conversation, still unresolved. Each blocks par
 ---
 
 *Supersedes: the standalone question list, the 11-dimension continuum tables, and the Emotional Stability scoring pilot. Companion to the onboarding UX flow spec.*
+
+---
+
+## Appendix A — Question Library, Full Text
+
+All 26 questions as written. Q0 is Michael's original seed question; Q1–Q22 were developed from it; Q23–Q25 are the gap-closing additions specified in §3. Theme groupings are from the original design and are useful for pacing (§3, rule 3), not for scoring.
+
+### Q0 — The Stars on Your Team *(seed)*
+
+**Original wording:**
+> "Tell me about your previous/current team/department. Who were the most popular/successful people — you know, the people whose work was the most regularly recognized by management, peers, customers. What did they (or you) do to stand out? Feel free to characterize their success in terms of political, technical, or innovative merits."
+
+**Version A (more open) — recommended default:**
+> "Think about your current or most recent team. Who really stood out — the people who got recognition, got promoted, or whose work people talked about? What made them successful? Was it technical skills, relationship-building, innovation, execution, something else?"
+
+Drops the self-referential "(or you)", which removes pressure and makes self-inclusion itself a signal. "Whose work people talked about" adds a social dimension the original lacked.
+
+**Version B (more directed) — for terse respondents:**
+> "Every workplace has its stars — people who get noticed and rewarded. In your last team, who were those people? And what was their secret sauce? Were they technically brilliant? Great at navigating politics? Innovative thinkers? Something else?"
+
+*Also the primary culture-capture question — what gets rewarded maps to CVF quadrant (§7). Probe rules in §3.*
+
+---
+
+### Career Narrative & Achievement
+
+**Q1 — The Unofficial Curriculum**
+> "Think about what you've actually learned in your career versus what was in any job description or training program. What's something important you had to figure out on your own that nobody explicitly taught you?"
+
+**Q2 — The Highlight Reel vs. The Cutting Room Floor**
+> "If you were making a documentary about your career, what's the scene that definitely makes the final cut — something you're proud of? And what's a scene that was important to you at the time but probably hits the cutting room floor because nobody else would find it interesting?"
+
+The second half is the load-bearing part: it separates intrinsic from extrinsic motivation by asking what they valued privately.
+
+**Q3 — The Parallel Universe Question**
+> "Imagine a version of you that made one different major career decision — took a different job, stayed somewhere longer, pursued a different field. What do you think that version of you is doing now? And honestly, do you ever wonder if they made the better call?"
+
+---
+
+### Challenge & Adversity
+
+**Q4 — The Obstacle That Stayed**
+> "Tell me about a professional challenge or obstacle that you never fully solved — something you eventually had to work around, accept, or just move on from rather than conquering it."
+
+**Q5 — The Breaking Point** *(heavy — never recruiter-facing, §8)*
+> "What's the closest you've come to walking out on a job or project? You don't have to have actually quit — just that moment where you seriously considered it. What was happening, and what made you stay or go?"
+
+**Q6 — The Pattern You Can't Break** *(heavy — never recruiter-facing, §8)*
+> "Is there a mistake or misstep you keep making in your career? Something where you know better, but you keep finding yourself in the same pattern?"
+
+---
+
+### Work Style & Process
+
+**Q7 — The Time Audit**
+> "Think about last week or a typical recent week. What did you spend the most time on? What do you *wish* you'd spent more time on? And what's the thing you spent time on that, honestly, probably wasn't worth it?"
+
+**Q8 — The Collaboration Spectrum**
+> "Here's a spectrum: On one end, a project where every major decision goes through the whole team, everyone weighs in, consensus matters. On the other end, clear ownership, people in their lanes, coordinated but independent. Where do you do your best work, and can you give me an example of when that setup really clicked for you?"
+
+*Weakest question in the library by the library's own standard — it states the dimension it's measuring. Q25 is the intended replacement; keep Q8 only as a fallback for respondents who struggle with Q25's failure-mode framing.*
+
+**Q9 — The Deliverable Dilemma**
+> "You're working on something important with a hard deadline. You're at 85% — it's good, it works, it meets the requirements. You could ship it now, or you could push the deadline and get it to 95%. What factors into that decision for you? And be honest — which way do you usually lean?"
+
+---
+
+### Social Dynamics & Relationships
+
+**Q10 — The Advice Network**
+> "When you're stuck on something — could be a work problem, a career decision, anything professional — who do you actually reach out to? Not who you're *supposed* to ask, but who you really call. And what makes those people your go-to's?"
+
+**Q11 — The Energy Equation**
+> "Think about the people you work with — or have worked with. Who energizes you? Like, after talking to them, you feel more creative, more motivated, more capable. And conversely, who drains you — even if they're perfectly nice, they just leave you exhausted. What's the difference?"
+
+**Q12 — The Influence Approach**
+> "When you need to convince someone of something — could be a colleague, a boss, a client — what's your natural approach? Do you build the logical case? Find allies first? Lead with enthusiasm? Something else? And has that approach ever really backfired on you?"
+
+---
+
+### Values & Meaning
+
+**Q13 — The Trade-Off Triangle**
+> "In an ideal role, you'd have interesting work, great people, and solid compensation/security. But most jobs make you compromise on at least one of those. Which one can you most easily compromise on, and which is non-negotiable? Has that changed over time?"
+
+**Q14 — The Unsung Win**
+> "Tell me about something you're really proud of that nobody else noticed or cared about. Could be an elegant solution, a crisis you quietly prevented, a skill you developed — just something where you know you did great work but it didn't get the recognition."
+
+**Q15 — The Deal-Breaker**
+> "What's something you've seen in a workplace or on a team that made you think 'I can't work here' or 'I can't work with these people'? Doesn't have to be dramatic — just something that crossed a line for you."
+
+---
+
+### Learning & Adaptation
+
+**Q16 — The Mind-Change Moment**
+> "What's something you used to believe about work, or your field, or how things should be done — and you've completely changed your mind? What shifted your thinking?"
+
+**Q17 — The Skill That Won't Stick**
+> "Is there a skill — technical, interpersonal, whatever — that you've tried to develop but just can't seem to get the hang of? Or that you've gotten better at but it still doesn't feel natural?"
+
+**Q18 — The Curiosity Catalog**
+> "What are you genuinely curious about right now — professionally or otherwise? What rabbit holes have you gone down lately? What are you reading, watching, learning about just because it's interesting?"
+
+---
+
+### Stress & Recovery
+
+**Q19 — The Pressure Gauge** *(heavy — never recruiter-facing, §8)*
+> "How do you know when you're getting overwhelmed or close to burnout? What are your early warning signs? And what actually helps you recover — not what you're 'supposed' to do, but what actually works for you?"
+
+**Q20 — The Mistake Autopsy** *(heavy — never recruiter-facing, §8)*
+> "Walk me through a significant mistake you made. Not what happened, but your internal experience — when did you realize it was a mistake? How did you feel? How long did you beat yourself up about it? What did you actually learn?"
+
+---
+
+### Wildcard / Meta
+
+**Q21 — The Job Description Gap**
+> "If you were writing a completely honest job description for your current or most recent role — not the official one, but the real one — what would you add to the 'Requirements' section that wasn't there? And what was listed that turned out not to matter?"
+
+**Q22 — The Future Self Interview**
+> "Imagine it's five years from now, and five-years-from-now you is looking back at present-day you. What advice do they wish they could give you? What do you hope they're grateful you did? What do you worry they're frustrated you didn't do?"
+
+---
+
+### Gap-Closing Additions
+
+**Q23 — The Gut Call** *(→ Thinking Style)*
+> "Tell me about a call you made where the data pointed one way and your instinct pointed the other. Which did you follow? And knowing how it turned out — do you trust yourself more or less on that kind of call now?"
+
+**Q24 — The Thing You'd Catch** *(→ Detail Orientation)*
+> "When you're reviewing someone else's work — a doc, a design, a pull request — what do you notice first? And what's the thing you know you consistently miss that someone else on the team always catches?"
+
+**Q25 — The Balance You Got Wrong** *(→ Work Style)*
+> "In an ideal week, how much of your time is you alone with a problem versus you in a room with other people? Now tell me about a stretch of work where that balance was badly wrong — in either direction — and what it did to you."
+
+---
+
+### Note on facet mappings
+
+The original library documented, per question, the specific Big Five facets each is designed to surface (e.g. Q4 → cautiousness, vulnerability, self-discipline, anger, depression, modesty). Those facet lists are the source of the dimension assignments in the §3 coverage matrix and should be carried into the `facet` field of the evidence schema (§4.1) when instantiating each scoring prompt. They are not reproduced here because the matrix supersedes them for selection purposes — but they matter for §9.1, if facet-level rollup is ever enabled.
