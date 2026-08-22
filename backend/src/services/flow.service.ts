@@ -83,6 +83,9 @@ export class FlowService {
       await trx('flow_progress').where({ user_id: userId }).delete();
       await trx('messages').where({ user_id: userId }).delete();
       await trx('conversation_threads').where({ user_id: userId }).delete();
+      // Personality engine (Iteration 3) — topic_thread cascades to exchange and dimension_evidence
+      // (ON DELETE CASCADE, see their migrations), so this one delete clears all three.
+      await trx('topic_thread').where({ user_id: userId }).delete();
       await trx('logistics_responses').where({ user_id: userId }).delete();
       await trx('resumes').where({ user_id: userId }).delete();
       await trx('candidate_profiles').where({ user_id: userId }).delete();

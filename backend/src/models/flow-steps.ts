@@ -104,12 +104,18 @@ export const flowSteps: FlowStep[] = [
     order: 3,
     stage: 'story',
     channels: ['app'],
+    // As of Iteration 3 (docs/personality-engine-implementation-plan.md), this step's live
+    // conversation no longer runs on this criteria string / starter list at all —
+    // topic-conversation.service.ts drives it entirely from the personality-engine question
+    // library (models/question-library.ts) and topic-elicitation.chain.ts's per-topic close
+    // criteria (docs/personality-analysis-engine-spec.md §3). Both fields are kept here only
+    // because FlowStep still requires them and the frontend's /api/flow/steps consumers read the
+    // description/order fields generically — the text below documents the step's *intent* for
+    // anyone skimming this file, it is not sent to any chain anymore.
     completionCriteria:
-      'The candidate has told at least 3-4 substantive stories (critical-incident / "tell me about ' +
-      'a time..." style) covering different situations — a conflict, a deadline or setback, a ' +
-      'collaboration, a decision made with incomplete information. Each story should be specific ' +
-      'enough (concrete actions, outcomes) to infer collaboration style, stress response, and ' +
-      'working preferences without ever asking the candidate to self-rate.',
+      'Superseded — see topic-conversation.service.ts. Placeholder until Iteration 5 wires real ' +
+      'progression.tier gating (flow addendum §2): completes once the core question set (Q0, ' +
+      'Q23-25) has been asked and closed.',
     conversationStarters: [
       'Tell me about a time you disagreed with a teammate or manager about how to approach something. What happened?',
       'Walk me through a project that didn\'t go the way you planned. What did you do when it started slipping?',

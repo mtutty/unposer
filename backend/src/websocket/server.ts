@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 import { db } from '../db/connection';
 import { ConversationService } from '../services/conversation.service';
+import { TopicConversationService } from '../services/topic-conversation.service';
 import { FlowService } from '../services/flow.service';
 import { ThreadStep } from '../types';
 
@@ -21,11 +22,16 @@ const CHAT_STEPS: ThreadStep[] = ['logistics', 'deep_prompts'];
 export class WSServer {
   private wss: WebSocketServer;
   private conversation: ConversationService;
+  // deep_prompts runs on the topic_thread/exchange model (Iteration 3) instead of
+  // conversation_threads/messages — see topic-conversation.service.ts's header comment. Logistics
+  // keeps using `conversation` above, untouched.
+  private topicConversation: TopicConversationService;
   private flow: FlowService;
 
   constructor(server: Server) {
     this.wss = new WebSocketServer({ server, path: '/ws' });
     this.conversation = new ConversationService();
+    this.topicConversation = new TopicConversationService();
     this.flow = new FlowService();
 
     this.wss.on('connection', this.handleConnection.bind(this));
@@ -111,7 +117,10 @@ export class WSServer {
     if (!ws.userId || !ws.step) return;
 
     try {
-      const outcome = await this.conversation.postUserMessage(ws.userId, ws.step, 'app', payload.content);
+      const outcome =
+        ws.step === 'deep_prompts'
+          ? await this.topicConversation.postUserMessage(ws.userId, 'app', payload.content)
+          : await this.conversation.postUserMessage(ws.userId, ws.step, 'app', payload.content);
 
       this.send(ws, { event: 'chat:message', payload: outcome.assistantMessage });
 
@@ -131,7 +140,10 @@ export class WSServer {
     const progress = await this.flow.getProgress(ws.userId);
     this.send(ws, { event: 'progress:update', payload: progress });
 
-    const messages = await this.conversation.ensureOpeningMessage(ws.userId, ws.step, 'app');
+    const messages =
+      ws.step === 'deep_prompts'
+        ? await this.topicConversation.ensureOpeningExchanges(ws.userId, 'app')
+        : await this.conversation.ensureOpeningMessage(ws.userId, ws.step, 'app');
     messages.forEach((msg) => {
       this.send(ws, { event: 'chat:message', payload: msg });
     });

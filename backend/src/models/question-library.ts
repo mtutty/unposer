@@ -13,6 +13,16 @@ import { DimensionKey } from '../types';
 
 export type DimensionLoad = 'P' | 's';
 
+/** One row of spec §3's "Adaptive follow-up probes" trigger/probe/target table. `targets` is
+ *  kept as prose (not a DimensionKey[]) — the spec's own table names constructs (Modesty,
+ *  self-efficacy, Trust, cynicism, Anger, coping style) that aren't 1:1 with the 11 scoring
+ *  dimensions; it's context for whoever's tuning the prompt, not a machine-read field. */
+export interface ProbeRule {
+  trigger: string;
+  probe: string;
+  targets: string;
+}
+
 export interface LibraryQuestion {
   id: string;
   shortName: string;
@@ -21,6 +31,15 @@ export interface LibraryQuestion {
    *  alternate to `prompt`'s "Version A (more open)" default. Not read anywhere yet — channel/
    *  respondent-adaptive phrasing selection is Iteration 3+ territory. */
   altPrompt?: string;
+  /** Spec §3's per-question trigger/probe/target table (topic-elicitation.chain.ts, Iteration 3).
+   *  Only Q0 has one — it's the spec's own reference pattern ("the seed question's rules, as the
+   *  pattern to replicate"), and the spec doesn't supply this table for the other 25 questions.
+   *  Rather than invent 25 questions' worth of trigger/probe content unattested by the spec, this
+   *  iteration leaves them to topic-elicitation.chain.ts's generic close-criteria block, whose own
+   *  fallback follow-up rule ("go after what is missing: the incident/outcome/role") already
+   *  covers the general case. Extending real per-question tables to more questions is future
+   *  editorial work, not an engineering gap. */
+  probeRules?: ProbeRule[];
   dimensionLoads: Partial<Record<DimensionKey, DimensionLoad>>;
   /** Emotionally demanding — never queue two of these back to back (spec §3, selection logic
    *  point 3). These same four (Q5, Q6, Q19, Q20) are also the ones spec §8 keeps from ever
@@ -58,7 +77,29 @@ export const questionLibrary: LibraryQuestion[] = [
     },
     heavy: false,
     theme: 'Seed',
-    note: 'Also the primary culture-capture question — what gets rewarded maps to CVF quadrant (§7).'
+    note: 'Also the primary culture-capture question — what gets rewarded maps to CVF quadrant (§7).',
+    probeRules: [
+      {
+        trigger: 'Mentions themselves among the stars',
+        probe: "What would your colleagues say your biggest contribution was?",
+        targets: 'Modesty, self-efficacy'
+      },
+      {
+        trigger: "Doesn't mention themselves at all",
+        probe: 'And where did your own work fit into that picture? What were you known for?',
+        targets: 'Self-efficacy vs. genuine modesty'
+      },
+      {
+        trigger: 'Emphasizes politics',
+        probe: 'Do you think the right people generally got recognized, or was it more about who you knew?',
+        targets: 'Trust, cynicism'
+      },
+      {
+        trigger: 'Shows resentment',
+        probe: 'Sounds like that was frustrating — how did you handle that dynamic?',
+        targets: 'Anger, coping style'
+      }
+    ]
   },
   {
     id: 'Q1',

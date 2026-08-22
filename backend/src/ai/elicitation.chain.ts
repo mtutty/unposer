@@ -33,7 +33,10 @@ export interface ElicitationTurnParams {
   extractionAreas?: InfoArea[];
 }
 
-const SHARED_PRINCIPLES =
+// Exported so topic-elicitation.chain.ts (Iteration 3's topic-thread-aware sibling — see that
+// file's header comment for why it's a sibling rather than a mode on this chain) can reuse the
+// same never-self-score framing instead of drifting a second copy of it.
+export const SHARED_PRINCIPLES =
   'You never ask the candidate to rate, score, or characterize themselves on a scale — no ' +
   'Likert items, no forced-choice questions, no "on a scale of 1-10". If the step is inferential ' +
   '(personality, collaboration style), draw it out through open-ended, narrative "tell me about ' +

@@ -64,6 +64,16 @@ describe('questionLibrary data integrity', () => {
     expect(noPrimary.map((q) => q.id)).toEqual(['Q17']);
   });
 
+  it('only Q0 has probeRules, and Q0\'s match the spec §3 seed-question table', () => {
+    for (const q of questionLibrary) {
+      if (q.id === 'Q0') {
+        expect(q.probeRules?.length).toBe(4);
+      } else {
+        expect(q.probeRules).toBeUndefined();
+      }
+    }
+  });
+
   it('gives every question a theme', () => {
     for (const q of questionLibrary) {
       expect(q.theme.length).toBeGreaterThan(0);
