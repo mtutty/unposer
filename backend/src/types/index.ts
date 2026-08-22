@@ -445,6 +445,12 @@ export interface Progression {
   pace_preference: PacePreference;
   next_question_id: string | null;
   last_contact_at: Date | null;
+  // Re-engagement cadence controls (spec §3.5, Iteration 9) — see weekly-scheduler.service.ts.
+  paused_until: Date | null;
+  paused_indefinitely: boolean;
+  unsubscribed_at: Date | null;
+  unanswered_count: number;
+  dormant_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }

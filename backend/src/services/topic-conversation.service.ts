@@ -52,8 +52,10 @@ export class TopicConversationService {
   }
 
   /** Flow addendum §3 (Iteration 6): "the candidate can move a topic to email at any point, per-
-   *  question or mid-thread" — this is that action, candidate-initiated (no scheduler pushes this
-   *  automatically, see Iteration 9). Re-sends the active thread's most recent assistant exchange
+   *  question or mid-thread" — this is that action, candidate-initiated. sendScheduledPrompt
+   *  below is the *proactive* counterpart (Iteration 9's weekly scheduler), which composes its
+   *  own content rather than re-sending an existing exchange verbatim. Re-sends the active
+   *  thread's most recent assistant exchange
    *  (the question currently awaiting an answer) as a real email, so there's something concrete
    *  in the candidate's inbox to reply to — the topic itself, and every exchange already on it,
    *  is untouched; this doesn't open a new thread or lose any continuity, it just gives the
@@ -74,6 +76,24 @@ export class TopicConversationService {
 
     await this.email.deliverForTopic(thread, lastAssistant.text);
     return this.toMessage(lastAssistant, thread);
+  }
+
+  /** Weekly scheduler's send primitive (Iteration 9, spec §3.5) — never called from the reply
+   *  path (postUserMessage), only from weekly-scheduler.service.ts's own proactive checks; kept
+   *  as its own method rather than reusing postUserMessage's machinery because a scheduled prompt
+   *  has no user reply to react to and no topic-close/aggregation/tier-recompute of its own to
+   *  trigger. `threadId: null` opens a fresh thread for `questionId` (the "new question" payload);
+   *  a real `threadId` appends to an existing one (the "continue" / "offer to close" payloads) —
+   *  either way the message is both persisted as a real exchange and actually emailed. */
+  async sendScheduledPrompt(userId: string, threadId: string | null, content: string, questionId?: string): Promise<Message> {
+    const thread = threadId ? await db('topic_thread').where({ id: threadId }).first() : await this.openThread(userId, questionId!);
+    if (!thread) {
+      throw new AppError('NOT_FOUND', `No topic_thread with id ${threadId}`, 404);
+    }
+
+    const exchange = await this.insertExchange(thread.id, 'assistant', content, 'email');
+    await this.email.deliverForTopic(thread, content);
+    return this.toMessage(exchange, thread);
   }
 
   /** Every exchange across every one of this user's topic threads (open, closed, ad hoc), oldest
@@ -136,6 +156,14 @@ export class TopicConversationService {
     const question = await this.resolveQuestion(thread);
 
     const userExchange = await this.insertExchange(thread.id, 'user', content, channel);
+
+    // Spec §3.5: "returning is a single click from any prior email or from the site" — any real
+    // reply re-engages a dormant candidate automatically, not just an explicit "resume" action.
+    // Fire-and-forget: never worth failing or delaying the turn itself over.
+    this.progression.clearDormancy(userId).catch((error) => {
+      console.warn(`[topic-conversation.service] clearDormancy failed for user ${userId}:`, error.message || error);
+    });
+
     const priorExchanges = await this.getExchanges(thread.id);
 
     const turn = await runTopicTurn({

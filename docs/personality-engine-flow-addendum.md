@@ -41,7 +41,7 @@ Two independent tracking structures now exist and must stay independent:
 | **Flow progress** | `flow_progress` (existing) | 6 `FlowStepId`s | Ends at Step 8 completion — this is "onboarding" |
 | **Engine progression** | `progression` (new, personality-engine spec §5) | 11 dimensions × 4 tiers | Open-ended — this is "Ongoing" |
 
-Step 5 completing in `flow_progress` is a one-time trigger read off `progression.tier`, not a merge of the two tables. After Step 5 flips to complete, the underlying `topic_thread`/`exchange` engine keeps running exactly as it would if the flow didn't exist — new questions, follow-ups, and eventually the weekly scheduler (deprioritized — see the current build-sequence ordering) continue independent of `current_step` having moved on to `profile_review`, `sandbox`, or `share`.
+Step 5 completing in `flow_progress` is a one-time trigger read off `progression.tier`, not a merge of the two tables. After Step 5 flips to complete, the underlying `topic_thread`/`exchange` engine keeps running exactly as it would if the flow didn't exist — new questions, follow-ups, and the weekly scheduler (Iteration 9, built — `weekly-scheduler.service.ts`/`weekly-scheduler.cron.ts`) continue independent of `current_step` having moved on to `profile_review`, `sandbox`, or `share`.
 
 Concretely: a candidate can be on Step 7 (Sandbox) in the rail while still answering deep-prompt questions in the background. This is intentional, not a bug to reconcile.
 
@@ -76,7 +76,7 @@ Rationale: the engine spec is explicit that "shareable link enabled" is a Core p
 ## 8. Explicit non-goals of this addendum
 
 - **Step 6.5 (Career Debrief)** and its proposed 3rd rail stage — untouched, still undecided, tracked separately in the onboarding spec and CLAUDE.md's Known TODOs.
-- **The weekly scheduler** — deprioritized in the current build-sequence ordering; this addendum's Step 5/8 gating logic has no dependency on it. Everything above works identically whether the candidate is answering same-day in chat or over a slow-cooker multi-week email cadence.
+- **The weekly scheduler** — built (Iteration 9), but this addendum's Step 5/8 gating logic never depended on it either way. Everything above works identically whether the candidate is answering same-day in chat or over the scheduler's slow-cooker multi-week email cadence.
 - **No new `FlowStepId` or `flowStages` entry.** The 6-step, 2-stage shape is unchanged.
 
 ---

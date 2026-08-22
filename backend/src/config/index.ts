@@ -67,6 +67,17 @@ export const config = {
     enabled: !!(process.env.RESEND_API_KEY && process.env.RESEND_WEBHOOK_SECRET)
   },
 
+  // Weekly re-engagement scheduler (spec §3.5, Iteration 9). Off by default even when Resend is
+  // fully configured — this is the one job that emails real candidates unprompted on a timer, so
+  // it needs its own explicit opt-in rather than inheriting `email.enabled`. A dev/staging stack
+  // with real Resend creds for testing the webhook (Iteration 6) doesn't also want every restart
+  // silently arming a cron job that emails whoever happens to be in the dev database.
+  scheduler: {
+    enabled: process.env.SCHEDULER_ENABLED === 'true',
+    // Default: every Monday 09:00 server time. node-cron syntax (5-field, no seconds field).
+    cronExpression: process.env.SCHEDULER_CRON || '0 9 * * 1'
+  },
+
   flow: {
     // Step 4 email-thread bounds (open item in the spec, defaulted here for the prototype).
     emailThreadCap: 30,

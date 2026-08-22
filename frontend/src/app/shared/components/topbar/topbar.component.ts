@@ -17,6 +17,7 @@ import { AuthService } from '../../../core/auth/auth.service';
           @if (user.role === 'admin') {
             <a routerLink="/admin/users" class="btn btn-ghost">Admin</a>
           }
+          <a routerLink="/settings/schedule" class="btn btn-ghost">Check-in settings</a>
           <span class="meta">{{ user.name }}</span>
           <button class="btn btn-ghost" (click)="logout()">Sign out</button>
         </div>

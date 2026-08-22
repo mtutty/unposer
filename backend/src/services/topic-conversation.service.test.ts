@@ -81,6 +81,7 @@ describe('TopicConversationService', () => {
   const mockExtractAndPersist = DimensionScoringService.prototype.extractAndPersist as jest.Mock;
   const mockRecomputeDimensions = ScoringAggregationService.prototype.recomputeDimensions as jest.Mock;
   const mockRecomputeTier = ProgressionService.prototype.recomputeTier as jest.Mock;
+  const mockClearDormancy = ProgressionService.prototype.clearDormancy as jest.Mock;
   const mockIndexDeepPrompt = EvidenceService.prototype.indexDeepPromptSubstrate as jest.Mock;
   const mockIndexDimensionEvidenceSpans = EvidenceService.prototype.indexDimensionEvidenceSpans as jest.Mock;
 
@@ -92,6 +93,7 @@ describe('TopicConversationService', () => {
     mockExtractAndPersist.mockResolvedValue([]);
     mockRecomputeDimensions.mockResolvedValue([]);
     mockRecomputeTier.mockResolvedValue({ tier: 'sketch' });
+    mockClearDormancy.mockResolvedValue(undefined);
     mockIndexDeepPrompt.mockResolvedValue(undefined);
     mockIndexDimensionEvidenceSpans.mockResolvedValue(undefined);
   });

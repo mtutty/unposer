@@ -113,7 +113,15 @@ export interface Progression {
   pace_preference: PacePreference;
   next_question_id: string | null;
   last_contact_at: string | null;
+  // Weekly re-engagement scheduler self-service state (spec §3.5, Iteration 9) — GET /api/schedule.
+  paused_until: string | null;
+  paused_indefinitely: boolean;
+  unsubscribed_at: string | null;
+  unanswered_count: number;
+  dormant_at: string | null;
 }
+
+export type PauseDuration = '30d' | '90d' | 'indefinite';
 
 // GET /api/profile/progression's response shape (Iteration 5) — a computed summary, not the raw
 // `progression` row above. Drives the persistent post-Sketch "answer one more question"

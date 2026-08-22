@@ -148,6 +148,140 @@ describe('ProgressionService.getTier', () => {
   });
 });
 
+describe('ProgressionService.clearDormancy', () => {
+  let service: ProgressionService;
+  let builder: ReturnType<typeof makeBuilder>;
+  const mockDb = db as unknown as jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new ProgressionService();
+    builder = makeBuilder();
+    builder.whereNotNull = jest.fn(() => builder);
+    mockDb.mockReturnValue(builder);
+  });
+
+  it('clears dormant_at and resets unanswered_count, scoped to rows currently dormant', async () => {
+    await service.clearDormancy('user-1');
+
+    expect(builder.where).toHaveBeenCalledWith({ user_id: 'user-1' });
+    expect(builder.whereNotNull).toHaveBeenCalledWith('dormant_at');
+    expect(builder.update).toHaveBeenCalledWith({ dormant_at: null, unanswered_count: 0 });
+  });
+});
+
+describe('ProgressionService pace/pause/resume/unsubscribe controls', () => {
+  let service: ProgressionService;
+  let builder: ReturnType<typeof makeBuilder>;
+  const mockDb = db as unknown as jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new ProgressionService();
+    builder = makeBuilder();
+    mockDb.mockReturnValue(builder);
+  });
+
+  it('setPacePreference upserts pace_preference', async () => {
+    builder.returning.mockResolvedValueOnce([{ pace_preference: 'one_a_week' }]);
+
+    const result = await service.setPacePreference('user-1', 'one_a_week');
+
+    expect(builder.insert).toHaveBeenCalledWith({ user_id: 'user-1', pace_preference: 'one_a_week' });
+    expect(builder.onConflict).toHaveBeenCalledWith('user_id');
+    expect(builder.merge).toHaveBeenCalledWith(['pace_preference']);
+    expect(result.pace_preference).toBe('one_a_week');
+  });
+
+  it('pause("30d") sets paused_until ~30 days out and clears paused_indefinitely', async () => {
+    builder.returning.mockResolvedValueOnce([{}]);
+
+    await service.pause('user-1', '30d');
+
+    const [insertArg] = builder.insert.mock.calls[0];
+    expect(insertArg.paused_indefinitely).toBe(false);
+    const daysOut = (insertArg.paused_until.getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+    expect(daysOut).toBeGreaterThan(29);
+    expect(daysOut).toBeLessThan(31);
+  });
+
+  it('pause("90d") sets paused_until ~90 days out', async () => {
+    builder.returning.mockResolvedValueOnce([{}]);
+
+    await service.pause('user-1', '90d');
+
+    const [insertArg] = builder.insert.mock.calls[0];
+    const daysOut = (insertArg.paused_until.getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+    expect(daysOut).toBeGreaterThan(89);
+    expect(daysOut).toBeLessThan(91);
+  });
+
+  it('pause("indefinite") sets paused_indefinitely and clears paused_until', async () => {
+    builder.returning.mockResolvedValueOnce([{}]);
+
+    await service.pause('user-1', 'indefinite');
+
+    expect(builder.insert).toHaveBeenCalledWith({ user_id: 'user-1', paused_indefinitely: true, paused_until: null });
+  });
+
+  it('resume clears both pause flags and any dormancy state', async () => {
+    builder.returning.mockResolvedValueOnce([{}]);
+
+    await service.resume('user-1');
+
+    expect(builder.insert).toHaveBeenCalledWith({
+      user_id: 'user-1',
+      paused_indefinitely: false,
+      paused_until: null,
+      dormant_at: null,
+      unanswered_count: 0
+    });
+  });
+
+  it('unsubscribe stamps unsubscribed_at', async () => {
+    builder.returning.mockResolvedValueOnce([{}]);
+
+    await service.unsubscribe('user-1');
+
+    const [insertArg] = builder.insert.mock.calls[0];
+    expect(insertArg.user_id).toBe('user-1');
+    expect(insertArg.unsubscribed_at).toBeInstanceOf(Date);
+    expect(builder.merge).toHaveBeenCalledWith(['unsubscribed_at']);
+  });
+});
+
+describe('ProgressionService.getState', () => {
+  let service: ProgressionService;
+  let builder: ReturnType<typeof makeBuilder>;
+  const mockDb = db as unknown as jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new ProgressionService();
+    builder = makeBuilder();
+    mockDb.mockReturnValue(builder);
+  });
+
+  it('returns the real row when one exists', async () => {
+    builder.first.mockResolvedValueOnce({ user_id: 'user-1', tier: 'sketch' });
+
+    const result = await service.getState('user-1');
+
+    expect(result.tier).toBe('sketch');
+  });
+
+  it('synthesizes an all-defaults row when the candidate has never reached Sketch', async () => {
+    builder.first.mockResolvedValueOnce(undefined);
+
+    const result = await service.getState('user-1');
+
+    expect(result.tier).toBe('none');
+    expect(result.pace_preference).toBe('whenever');
+    expect(result.paused_indefinitely).toBe(false);
+    expect(result.unsubscribed_at).toBeNull();
+  });
+});
+
 describe('ProgressionService.getTemporalDepthSummary', () => {
   let service: ProgressionService;
   let builder: ReturnType<typeof makeBuilder>;

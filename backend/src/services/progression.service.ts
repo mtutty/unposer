@@ -77,6 +77,89 @@ export class ProgressionService {
     return row?.tier ?? 'none';
   }
 
+  /** "Returning is a single click from any prior email or from the site" (spec §3.5) — cleared on
+   *  any reply (see topic-conversation.service.ts's postUserMessage), not just an explicit
+   *  "resume" action, so a candidate who was marked dormant and simply replies to an old email is
+   *  automatically re-engaged without any extra step. The `whereNotNull` guard means this is a
+   *  cheap no-op update touching zero rows for the overwhelming common case (never dormant),
+   *  rather than an unconditional write on every single turn. */
+  async clearDormancy(userId: string): Promise<void> {
+    await db('progression').where({ user_id: userId }).whereNotNull('dormant_at').update({ dormant_at: null, unanswered_count: 0 });
+  }
+
+  // -------------------------------------------------------------------------
+  // Re-engagement cadence self-service controls (spec §3.5, Iteration 9) — every email carries a
+  // link back to these. Upserts rather than plain updates: a candidate can set a preference
+  // before they've ever reached Sketch (no progression row would otherwise exist yet), and it
+  // still needs to be respected once the scheduler starts considering them eligible.
+  // -------------------------------------------------------------------------
+
+  /** GET /api/schedule's read side. Synthesizes the same shape a real row would have when none
+   *  exists yet (tier 'none', every control at its default) rather than 404ing — a candidate who
+   *  hasn't reached Sketch still has a settings page, it's just all defaults until recomputeTier
+   *  (or one of the control methods above, via upsert) creates the row for real. */
+  async getState(userId: string): Promise<Progression> {
+    const row = await db('progression').where({ user_id: userId }).first();
+    if (row) return row;
+    return {
+      id: '',
+      user_id: userId,
+      tier: 'none',
+      dimensions_at_confidence: [],
+      pace_preference: 'whenever',
+      next_question_id: null,
+      last_contact_at: null,
+      paused_until: null,
+      paused_indefinitely: false,
+      unsubscribed_at: null,
+      unanswered_count: 0,
+      dormant_at: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+  }
+
+  async setPacePreference(userId: string, pace: Progression['pace_preference']): Promise<Progression> {
+    return this.upsertProgressionRow(userId, { pace_preference: pace });
+  }
+
+  /** duration: '30d' | '90d' | 'indefinite' — spec §3.5's three pause options, resumable with no
+   *  state loss (nothing about evidence/scores/insights is touched, only whether the scheduler
+   *  considers this candidate due). */
+  async pause(userId: string, duration: '30d' | '90d' | 'indefinite'): Promise<Progression> {
+    if (duration === 'indefinite') {
+      return this.upsertProgressionRow(userId, { paused_indefinitely: true, paused_until: null });
+    }
+    const days = duration === '30d' ? 30 : 90;
+    const pausedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    return this.upsertProgressionRow(userId, { paused_indefinitely: false, paused_until: pausedUntil });
+  }
+
+  /** Explicit candidate action (as opposed to clearDormancy's automatic-on-reply trigger above) —
+   *  clears a pause *and* any dormancy in one step, since both are "stop contacting me" states
+   *  from the scheduler's point of view and "resume" should mean "start again," full stop. */
+  async resume(userId: string): Promise<Progression> {
+    return this.upsertProgressionRow(userId, { paused_indefinitely: false, paused_until: null, dormant_at: null, unanswered_count: 0 });
+  }
+
+  /** "Clearly separable from deleting the account or profile" (spec §3.5) — this only ever
+   *  touches `unsubscribed_at`; nothing about the candidate's account, profile, or evidence is
+   *  affected, and there's no code path that reads `unsubscribed_at` for anything other than the
+   *  weekly scheduler's own eligibility gate. */
+  async unsubscribe(userId: string): Promise<Progression> {
+    return this.upsertProgressionRow(userId, { unsubscribed_at: new Date() });
+  }
+
+  private async upsertProgressionRow(userId: string, changes: Record<string, unknown>): Promise<Progression> {
+    const columns = Object.keys(changes);
+    const [row] = await db('progression')
+      .insert({ user_id: userId, ...changes })
+      .onConflict('user_id')
+      .merge(columns)
+      .returning('*');
+    return row;
+  }
+
   async getTemporalDepthSummary(userId: string): Promise<TemporalDepthSummary> {
     const latest = await this.loadLatestScores(userId);
     const atMediumOrAbove = ALL_DIMENSIONS.filter((d) => {
