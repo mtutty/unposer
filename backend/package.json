@@ -12,7 +12,8 @@
     "migrate:rollback": "knex migrate:rollback",
     "migrate:make": "knex migrate:make",
     "simulate:inbound-email": "ts-node src/scripts/simulate-inbound-email.ts",
-    "seed:personality-fixture": "ts-node src/scripts/seed-personality-fixture.ts"
+    "seed:personality-fixture": "ts-node src/scripts/seed-personality-fixture.ts",
+    "score:fixture-transcript": "ts-node src/scripts/score-fixture-transcript.ts"
   },
   "dependencies": {
     "@langchain/anthropic": "^1.5.4",
