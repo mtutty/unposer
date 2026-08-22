@@ -279,6 +279,189 @@ export interface ShareLink {
   created_at: Date;
 }
 
+// ---------------------------------------------------------------------------
+// Personality engine (docs/personality-analysis-engine-spec.md, tracked in
+// docs/personality-engine-implementation-plan.md) — Iteration 1 scaffolding only. Types mirror
+// the migrations in db/migrations/2026082100000{2..10}_create_*.ts; no chain/service logic
+// reads or writes these yet.
+// ---------------------------------------------------------------------------
+
+// The 11 continua from spec §2. Values are the DB/prompt-facing keys, not display names.
+export type DimensionKey =
+  | 'emotional_stability'
+  | 'social_energy'
+  | 'dominance'
+  | 'agreeableness'
+  | 'conscientiousness'
+  | 'openness'
+  | 'change_orientation'
+  | 'thinking_style'
+  | 'detail_orientation'
+  | 'motivation'
+  | 'work_style';
+
+export type ThreadCloseReason = 'user' | 'model';
+export type TopicThreadStatus = 'open' | 'closed';
+
+export interface TopicThread {
+  id: string;
+  user_id: string;
+  // Question-library id (e.g. 'Q0', 'Q23') or an ad hoc reask id — see flow addendum §6.
+  question_id: string;
+  opened_at: Date;
+  closed_at: Date | null;
+  closed_by: ThreadCloseReason | null;
+  status: TopicThreadStatus;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface Exchange {
+  id: string;
+  thread_id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  sent_at: Date;
+  channel: Channel;
+  // Candidate-local calendar date (UTC fallback for now) — see utils/occasion.ts.
+  occasion_id: string;
+}
+
+export type EvidenceDirection = 'low' | 'high';
+export type EvidenceStrength = 'strong' | 'moderate' | 'weak';
+export type EvidenceType =
+  | 'explicit_statement'
+  | 'behavioral_report'
+  | 'attribution_pattern'
+  | 'linguistic_marker';
+
+// Scoring evidence (spec §4.1) — distinct from the pgvector profile_evidence/conversation_evidence
+// RAG tables, which this converges with only in Iteration 8.
+export interface DimensionEvidence {
+  id: string;
+  exchange_id: string;
+  dimension: DimensionKey;
+  span: string;
+  direction: EvidenceDirection;
+  strength: EvidenceStrength;
+  type: EvidenceType;
+  // Facet-level tag, dimension-level score (spec §9.1, decided) — no facet scores in v1.
+  facet: string | null;
+  note: string | null;
+  created_at: Date;
+}
+
+export type ScoreConfidence = 'high' | 'medium-high' | 'medium' | 'low' | 'insufficient_signal';
+export type ScoreBand = 'high' | 'medium-high' | 'medium' | 'suppressed';
+export type ProgressionTier = 'none' | 'sketch' | 'core_persona' | 'in_depth' | 'ongoing';
+
+// Versioned, not mutated in place (spec §5) — a re-score inserts a new row per (user_id,
+// dimension, version) rather than updating the previous one.
+export interface DimensionScore {
+  id: string;
+  user_id: string;
+  dimension: DimensionKey;
+  version: number;
+  // Null when confidence is 'insufficient_signal' (spec §4.3 STEP 5).
+  score: number | null;
+  confidence: ScoreConfidence;
+  band: ScoreBand | null;
+  tier: ProgressionTier | null;
+  contributing_evidence_ids: string[];
+  distinct_occasions: number;
+  computed_at: Date;
+}
+
+export type InsightType =
+  | 'distinctiveness'
+  | 'tension'
+  | 'pattern'
+  | 'context_dependence'
+  | 'environment_implication'
+  | 'own_words';
+
+// The personality-engine insight (spec §6) — distinct from ProfileInsight above, which is Step
+// 6's narrative-profile shape. PersonalityInsight is the source of record; profile_data.insights
+// gets populated from it once the insight generator exists (Iteration 5).
+export interface PersonalityInsight {
+  id: string;
+  user_id: string;
+  type: InsightType;
+  text: string;
+  supporting_evidence_ids: string[];
+  surfaced_to_user: boolean;
+  surfaced_to_recruiter: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export type CvfQuadrant = 'hierarchy' | 'adhocracy' | 'clan' | 'market';
+
+// Competing Values Framework signal (spec §7) — environmental/employer-culture data, kept
+// separate from personality dimension scores.
+export interface CultureSignal {
+  id: string;
+  user_id: string;
+  cvf_quadrant: CvfQuadrant;
+  source_evidence_ids: string[];
+  created_at: Date;
+  updated_at: Date;
+}
+
+export type PacePreference = 'whenever' | 'one_a_week' | 'all_now';
+
+// One row per user tracking personality-engine tier/pacing (spec §3.5) — distinct from
+// FlowProgress, which tracks the 6 onboarding steps.
+export interface Progression {
+  id: string;
+  user_id: string;
+  tier: ProgressionTier;
+  dimensions_at_confidence: DimensionKey[];
+  pace_preference: PacePreference;
+  next_question_id: string | null;
+  last_contact_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// Rating-workbench output (spec §5.5 Function 1). Exactly one of evidence_id/exchange_id is
+// expected to be set per row ("evidence_id | answer_id" in the spec — exchange stands in for
+// "answer", there being no separate answer entity). rater_id is a free-form string, not a user_id
+// FK — see the calibration_rating migration for why.
+export interface CalibrationRating {
+  id: string;
+  evidence_id: string | null;
+  exchange_id: string | null;
+  rater_id: string;
+  dimension: DimensionKey;
+  human_score: number;
+  confidence: ScoreConfidence;
+  notes: string | null;
+  rated_at: Date;
+  saw_model_score: boolean;
+}
+
+export type VarianceFlagType = 'topic_linked' | 'occasion_linked' | 'monotonic_drift' | 'ambiguous';
+
+// Automatic variance-classification record (spec §4.4, §5.5 Function 2, §9.9) — written
+// unconditionally on every ambiguous case. user_id is the spec's "profile_id" (conceptual, not a
+// literal profile row — see the migration comment).
+export interface VarianceFlag {
+  id: string;
+  user_id: string;
+  dimension: DimensionKey;
+  flag_type: VarianceFlagType;
+  magnitude: number;
+  contributing_evidence_ids: string[];
+  topic_spread: string[];
+  occasion_spread: string[];
+  model_call: Record<string, any>;
+  human_adjudication: VarianceFlagType | null;
+  adjudicated_by: string | null;
+  adjudicated_at: Date | null;
+  created_at: Date;
+}
+
 export class AppError extends Error {
   constructor(
     public code: string,

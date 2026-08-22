@@ -21,7 +21,7 @@
 | # | Iteration | Status | One-line goal |
 |---|---|---|---|
 | 0 | Spec + flow addendum | ✅ Done | Design spec consolidated; flow conflict resolved in writing |
-| 1 | Data model & scaffolding | ⬜ Not started | New tables + types, no behavior change |
+| 1 | Data model & scaffolding | ✅ Done | New tables + types, no behavior change |
 | 2 | Scoring template, all 11 dimensions (extraction-only) | ⬜ Not started | Evidence extraction pipeline proven, nothing surfaced |
 | 3 | Coverage-driven selection + topic-close | ⬜ Not started | Step 5 chat gets smarter; still no scores/insights shown |
 | 4 | Aggregation/confidence + calibration console | ⬜ Not started | Scores computable internally; admin rating tool live |
@@ -60,9 +60,22 @@ Legend: ⬜ Not started · 🟨 In progress · ✅ Done · 🔶 Done with follow
 
 **Done when:** migrations apply and roll back cleanly (`up`/`down` both work); a throwaway seed script can insert a fake `topic_thread` → `exchange` → `dimension_evidence` chain spanning simulated distinct days and read it back with correct `occasion_id`s; `npm test` still green in both `backend` and `frontend`.
 
-**Files touched:** *(fill in when done)*
+**Files touched:**
+- `backend/src/db/migrations/20260821000002_create_topic_thread.ts` through `..._000010_create_variance_flag.ts` (9 migrations, one table each, matching the existing one-table-per-file convention)
+- `backend/src/types/index.ts` — new personality-engine section (`DimensionKey`, `TopicThread`, `Exchange`, `DimensionEvidence`, `DimensionScore`, `PersonalityInsight`, `CultureSignal`, `Progression`, `CalibrationRating`, `VarianceFlag`, plus their enum-ish string-union types)
+- `frontend/src/app/models/personality.model.ts` — new file, mirrors the above minus `CalibrationRating`/`VarianceFlag` (see decisions below)
+- `backend/src/utils/occasion.ts` + `occasion.test.ts` — `computeOccasionId`
+- `backend/src/scripts/seed-personality-fixture.ts` + `package.json`'s `seed:personality-fixture` script
 
-**Notes / decisions:** *(fill in when done — especially the occasion_id timezone source decision)*
+**Notes / decisions:**
+- **occasion_id timezone source:** none exists anywhere in the codebase (checked `users`, `logistics_responses`, everywhere else in `backend/src/types`) — falls back to the UTC calendar date of `sent_at`, computed by `computeOccasionId()` in `utils/occasion.ts`. Documented in that file as a real approximation to revisit (not a placeholder to silently swap) once a real timezone source exists — candidate signup, browser-reported offset, or a logistics-capture question.
+- **`question_id` has no FK / no `questions` table.** Confirmed the question library doesn't exist as data yet — `deep_prompts`'s `conversationStarters` in `flow-steps.ts` is still generic, unnumbered copy. `topic_thread.question_id` is a free-form string (`'Q0'`, `'Q23'`, or later an ad hoc reask id per the flow addendum) until Iteration 2/3 gives it something real to reference; still no DB table planned, per the spec, since the library lives in code.
+- **`profile_id` (spec's `dimension_score`/`variance_flag`) → `user_id`.** The spec's §5 data-model diagram nests these under a conceptual "profile," but there's no literal row to point at — `candidate_profiles` is a separate narrative-profile table untouched by this work. Used `user_id` directly, noted in each migration's header comment.
+- **`rater_id`/`adjudicated_by` are free-form strings, not FKs to `users`.** Outside raters (e.g. a paid I/O psychologist) aren't expected to be OIDC app users, and the real admin/rater-account + access-control model is explicitly Iteration 4's job (§5.5 Access controls). Revisit these columns then — possibly a real FK once that model exists.
+- **`calibration_rating`'s `evidence_id | answer_id`** → two nullable FKs (`evidence_id` → `dimension_evidence`, `exchange_id` → `exchange`, standing in for "answer" since there's no separate answer entity). Not enforced at the DB level that exactly one is set — scaffolding only, no service layer exists yet to violate it.
+- **Frontend mirroring scoped down deliberately:** `CalibrationRating` and `VarianceFlag` were *not* mirrored into `frontend/src/app/models/personality.model.ts` — there's no admin surface in the frontend at all yet (Iteration 4 builds the calibration console), so there's nothing to mirror them for. Add them there when that iteration starts. Everything else mirrors, with `Date` → `string` and server-internal keys (`user_id`, thread/exchange back-references not needed client-side) dropped, matching the existing `ConversationThread`/`Message` mirroring pattern.
+- **Verification:** ran `knex migrate:latest` then `migrate:rollback` then `migrate:latest` again against the live dev Postgres (`docker compose exec api npx knex migrate:...`) — all 9 up and all 9 down clean, no orphaned tables. `npm run seed:personality-fixture -- --user dev@example.com` inserted a `topic_thread` with 3 exchanges across 3 distinct simulated days, 1 `dimension_evidence` row each, read them back joined, confirmed 3 distinct `occasion_id`s, and cleaned up. `backend`: `npm test` (9 suites/38 tests) and `npx tsc --noEmit` both clean. `frontend`: `npm run test:ci` (17/17) clean.
+- **Follow-up for Iteration 2:** locating the current Emotional Stability scoring logic (likely in `elicitation.chain.ts` or `profile-generator.chain.ts`) and the exact home of a "question library" beyond `flow-steps.ts`'s `conversationStarters` was explicitly out of scope here — still open, first task of Iteration 2.
 
 ---
 
