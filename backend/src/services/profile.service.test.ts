@@ -16,6 +16,9 @@ import { ProgressionService } from './progression.service';
 jest.mock('./insight.service');
 import { InsightService } from './insight.service';
 
+jest.mock('./culture-signal.service');
+import { CultureSignalService } from './culture-signal.service';
+
 jest.mock('./evidence.service');
 import { EvidenceService } from './evidence.service';
 
@@ -69,6 +72,7 @@ describe('ProfileService.generateProfile', () => {
   const mockGetTier = ProgressionService.prototype.getTier as jest.Mock;
   const mockGetFullTranscript = TopicConversationService.prototype.getFullTranscript as jest.Mock;
   const mockRegenerateInsights = InsightService.prototype.regenerate as jest.Mock;
+  const mockRegenerateCultureSignal = CultureSignalService.prototype.regenerate as jest.Mock;
   const mockGenerateCandidateProfile = generateCandidateProfile as jest.Mock;
   const mockIndexDistilledProfile = EvidenceService.prototype.indexDistilledProfile as jest.Mock;
 
@@ -78,6 +82,7 @@ describe('ProfileService.generateProfile', () => {
     builder = makeBuilder();
     mockDb.mockReturnValue(builder);
     mockIndexDistilledProfile.mockResolvedValue(undefined);
+    mockRegenerateCultureSignal.mockResolvedValue([]);
   });
 
   it('throws INSUFFICIENT_DATA when progression.tier is still "none", without ever calling the chain', async () => {
@@ -149,6 +154,7 @@ describe('ProfileService.generateProfile', () => {
     // Iteration 5 notes for the live bug this guards against regressing).
     expect(typeof insertedRow.correction_log).toBe('string');
     expect(JSON.parse(insertedRow.correction_log)).toEqual([]);
+    expect(mockRegenerateCultureSignal).toHaveBeenCalledWith('user-1');
     expect(result).toEqual(inserted);
   });
 });

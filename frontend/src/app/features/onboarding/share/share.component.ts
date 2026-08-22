@@ -1,7 +1,8 @@
-import { Component, OnInit, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ShareService } from '../../../core/share/share.service';
+import { ProfileService } from '../../../core/profile/profile.service';
 import { ShareLink } from '../../../models/sandbox.model';
 
 @Component({
@@ -15,21 +16,31 @@ import { ShareLink } from '../../../models/sandbox.model';
       backed by the profile you approved. It expires on its own; nothing to revoke later.
     </p>
 
+    @if (tierTooLow()) {
+      <div class="card banner banner-brick tier-notice">
+        <p>
+          Your profile needs a bit more depth before you can share it —
+          {{ profileService.progression()?.dimensionsAtConfidence?.length ?? 0 }} of 11 dimensions are
+          well-evidenced so far. Answer a few more questions (especially on separate days) to strengthen it.
+        </p>
+      </div>
+    }
+
     <form class="card panel create-form" (ngSubmit)="create()">
       <div class="field-row">
         <div class="field">
           <label for="days">Expires in (days)</label>
-          <input id="days" type="number" min="1" max="60" [(ngModel)]="days" name="days" />
+          <input id="days" type="number" min="1" max="60" [(ngModel)]="days" name="days" [disabled]="tierTooLow()" />
         </div>
         <div class="field">
           <label for="label">Label (optional)</label>
-          <input id="label" [(ngModel)]="label" name="label" placeholder="e.g. Referral to Acme" />
+          <input id="label" [(ngModel)]="label" name="label" placeholder="e.g. Referral to Acme" [disabled]="tierTooLow()" />
         </div>
       </div>
       @if (createError()) {
         <p class="error-line">{{ createError() }}</p>
       }
-      <button type="submit" class="btn btn-primary" [disabled]="creating()">
+      <button type="submit" class="btn btn-primary" [disabled]="creating() || tierTooLow()">
         {{ creating() ? 'Generating…' : 'Generate link' }}
       </button>
     </form>
@@ -128,6 +139,14 @@ import { ShareLink } from '../../../models/sandbox.model';
         font-size: 0.85rem;
       }
 
+      .tier-notice {
+        margin-bottom: 1.25rem;
+
+        p {
+          margin: 0;
+        }
+      }
+
       @media (max-width: 640px) {
         .field-row {
           grid-template-columns: 1fr;
@@ -145,10 +164,19 @@ export class ShareStepComponent implements OnInit {
   justCreatedUrl = signal<string | null>(null);
   copied = signal(false);
 
-  constructor(private shareService: ShareService) {}
+  // Flow addendum §7: the share button is disabled (with a reason) until progression.tier
+  // reaches Core persona — the real gate is server-side (ShareService.createLink), this just
+  // avoids sending a request that would only come back 400.
+  tierTooLow = computed(() => {
+    const tier = this.profileService.progression()?.tier;
+    return !!tier && tier !== 'core_persona' && tier !== 'in_depth' && tier !== 'ongoing';
+  });
+
+  constructor(private shareService: ShareService, public profileService: ProfileService) {}
 
   ngOnInit(): void {
     this.shareService.list().subscribe((links) => this.links.set(links));
+    this.profileService.loadProgression().subscribe();
   }
 
   create(): void {

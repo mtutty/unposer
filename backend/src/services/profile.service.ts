@@ -5,6 +5,7 @@ import { generateReaskQuestion } from '../ai/reask.chain';
 import { TopicConversationService } from './topic-conversation.service';
 import { ProgressionService } from './progression.service';
 import { InsightService } from './insight.service';
+import { CultureSignalService } from './culture-signal.service';
 import { EvidenceService } from './evidence.service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,6 +17,7 @@ export class ProfileService {
   private topicConversation = new TopicConversationService();
   private progression = new ProgressionService();
   private insights = new InsightService();
+  private cultureSignal = new CultureSignalService();
   private evidence = new EvidenceService();
 
   async getProfile(userId: string): Promise<CandidateProfile | null> {
@@ -61,6 +63,15 @@ export class ProfileService {
     // produce a strong-enough insight) — narrative-only either way, since ProfileInsight has no
     // numeric field to render regardless of tier.
     const personalityInsights = await this.insights.regenerate(userId);
+
+    // Culture capture (spec §7) — a free second data stream from the same Q0/Q15/Q21 answers,
+    // explicitly never blended into the profile or the personality dimension scores above (see
+    // culture-signal.service.ts). Not on the critical path for the narrative profile itself, so a
+    // failure here shouldn't block profile generation — same fire-and-forget posture the evidence
+    // re-indexing below already uses.
+    this.cultureSignal.regenerate(userId).catch((error) => {
+      console.warn(`[profile.service] culture-signal regeneration failed for user ${userId}:`, error.message || error);
+    });
 
     const profileData = await generateCandidateProfile({
       resume: resume.structured_data,
