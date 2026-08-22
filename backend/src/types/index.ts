@@ -326,6 +326,13 @@ export interface TopicThread {
   // there's no LibraryQuestion.dimensionLoads to read them from. Null for every ordinary
   // library-question thread. See topic-conversation.service.ts's openAdHocTopic().
   ad_hoc_dimensions: DimensionKey[] | null;
+  // Email gateway (flow addendum §3, Iteration 6) — mirrors conversation_threads' own fields (see
+  // that migration). `inbound_token` routes `reply+<token>@<domain>` back to this thread
+  // regardless of which channel opened it; the other two are Resend message ids used for
+  // In-Reply-To/References threading headers.
+  inbound_token: string;
+  last_inbound_message_id: string | null;
+  last_outbound_message_id: string | null;
   created_at: Date;
   updated_at: Date;
 }

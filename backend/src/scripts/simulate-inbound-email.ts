@@ -7,10 +7,18 @@
  *   docker-compose exec api npm run simulate:inbound-email -- --user devuser@example.com --text "Remote only, staff level."
  *   docker-compose exec api npm run simulate:inbound-email -- --token <inbound_token> --post
  *   docker-compose exec api npm run simulate:inbound-email -- --user devuser@example.com --email-id re_realIdFromResend
+ *   docker-compose exec api npm run simulate:inbound-email -- --user devuser@example.com --step deep_prompts --text "More detail on that." --post
  *
  * Flags:
- *   --user <email>       Look up the user and their `logistics` conversation_threads row.
- *   --token <uuid>        Use this inbound_token directly instead of --user.
+ *   --user <email>       Look up the user's thread — `logistics` conversation_threads by default,
+ *                          or their currently-open `topic_thread` with --step deep_prompts
+ *                          (Iteration 6, flow addendum §3; the candidate must have an open topic —
+ *                          use POST /api/deep-prompts/switch-to-email first, or the app UI's
+ *                          "continue by email" action, same as a real candidate would).
+ *   --step <logistics|deep_prompts>  Which thread type --user resolves against (default logistics).
+ *   --token <uuid>        Use this inbound_token directly instead of --user — tried against both
+ *                          conversation_threads and topic_thread, same fallback order
+ *                          webhooks.routes.ts itself uses.
  *   --text <body>          Inbound message body (default: a canned reply). FAST/OFFLINE MODE:
  *                           sets a `data.text` field the real Resend webhook never sends —
  *                           webhooks.routes.ts has a narrow, NODE_ENV-guarded bypass that uses it
@@ -50,15 +58,36 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
 }
 
 async function resolveThread(args: Record<string, string | boolean>) {
+  const step = typeof args.step === 'string' ? args.step : 'logistics';
+  if (step !== 'logistics' && step !== 'deep_prompts') {
+    throw new Error(`--step must be "logistics" or "deep_prompts", got "${step}"`);
+  }
+
   if (typeof args.token === 'string') {
+    // Same conversation_threads-then-topic_thread fallback webhooks.routes.ts itself uses — the
+    // two tables' inbound_token values never collide, so trying both in order is safe.
     const thread = await db('conversation_threads').where({ inbound_token: args.token }).first();
-    if (!thread) throw new Error(`No conversation_threads row with inbound_token ${args.token}`);
-    return thread;
+    if (thread) return thread;
+    const topicThread = await db('topic_thread').where({ inbound_token: args.token }).first();
+    if (topicThread) return topicThread;
+    throw new Error(`No conversation_threads or topic_thread row with inbound_token ${args.token}`);
   }
 
   if (typeof args.user === 'string') {
     const user = await db('users').where({ email: args.user }).first();
     if (!user) throw new Error(`No user with email ${args.user}`);
+
+    if (step === 'deep_prompts') {
+      const thread = await db('topic_thread').where({ user_id: user.id, status: 'open' }).orderBy('opened_at', 'desc').first();
+      if (!thread) {
+        throw new Error(
+          `User ${args.user} has no open topic_thread yet — have them start Step 5 and switch a topic to email first ` +
+            `(POST /api/deep-prompts/switch-to-email), which is what generates the inbound_token this simulates a reply to.`
+        );
+      }
+      return { thread, user };
+    }
+
     const thread = await db('conversation_threads').where({ user_id: user.id, step: 'logistics' }).first();
     if (!thread) {
       throw new Error(

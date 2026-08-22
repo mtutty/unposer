@@ -6,6 +6,7 @@ import { DimensionScoringService } from './dimension-scoring.service';
 import { ScoringAggregationService } from './scoring-aggregation.service';
 import { ProgressionService } from './progression.service';
 import { EvidenceService } from './evidence.service';
+import { EmailService } from './email.service';
 import { runTopicTurn } from '../ai/topic-elicitation.chain';
 import { computeOccasionId } from '../utils/occasion';
 
@@ -32,6 +33,7 @@ export class TopicConversationService {
   private aggregation = new ScoringAggregationService();
   private progression = new ProgressionService();
   private evidence = new EvidenceService();
+  private email = new EmailService();
 
   /** Returns the open thread's full exchange history, or opens a freshly-selected topic and
    *  returns its single opening exchange — the library's own question prompt, inserted directly
@@ -47,6 +49,31 @@ export class TopicConversationService {
     const thread = await this.openThread(userId, question.id);
     const opener = await this.insertExchange(thread.id, 'assistant', question.prompt, channel);
     return [this.toMessage(opener, thread)];
+  }
+
+  /** Flow addendum §3 (Iteration 6): "the candidate can move a topic to email at any point, per-
+   *  question or mid-thread" — this is that action, candidate-initiated (no scheduler pushes this
+   *  automatically, see Iteration 9). Re-sends the active thread's most recent assistant exchange
+   *  (the question currently awaiting an answer) as a real email, so there's something concrete
+   *  in the candidate's inbox to reply to — the topic itself, and every exchange already on it,
+   *  is untouched; this doesn't open a new thread or lose any continuity, it just gives the
+   *  existing one a real email address to be replied to from. Every subsequent exchange still
+   *  gets whichever channel it actually arrived on (postUserMessage's own `channel` param), so a
+   *  candidate can freely alternate email/chat turn to turn on the same thread. */
+  async switchActiveTopicToEmail(userId: string): Promise<Message> {
+    const thread = await this.getActiveThread(userId);
+    if (!thread) {
+      throw new AppError('NO_ACTIVE_TOPIC', 'No open topic to continue by email — resume the session first.', 400);
+    }
+
+    const exchanges = await this.getExchanges(thread.id);
+    const lastAssistant = [...exchanges].reverse().find((e) => e.role === 'assistant');
+    if (!lastAssistant) {
+      throw new AppError('NO_PENDING_QUESTION', 'Nothing to send yet — this topic has no question pending a reply.', 400);
+    }
+
+    await this.email.deliverForTopic(thread, lastAssistant.text);
+    return this.toMessage(lastAssistant, thread);
   }
 
   /** Every exchange across every one of this user's topic threads (open, closed, ad hoc), oldest

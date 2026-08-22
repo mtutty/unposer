@@ -16,6 +16,7 @@ import shareRoutes from './routes/share.routes';
 import publicRoutes from './routes/public.routes';
 import webhookRoutes from './routes/webhooks.routes';
 import adminRoutes from './routes/admin.routes';
+import deepPromptsRoutes from './routes/deep-prompts.routes';
 
 export function createApp() {
   const app = express();
@@ -67,6 +68,7 @@ export function createApp() {
   app.use('/api/share', shareRoutes);
   app.use('/api/public', publicRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/deep-prompts', deepPromptsRoutes);
 
   // Error handler (must be last)
   app.use(errorHandler);

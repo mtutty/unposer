@@ -16,6 +16,9 @@ import { ProgressionService } from './progression.service';
 jest.mock('./evidence.service');
 import { EvidenceService } from './evidence.service';
 
+jest.mock('./email.service');
+import { EmailService } from './email.service';
+
 jest.mock('../ai/topic-elicitation.chain', () => ({ runTopicTurn: jest.fn() }));
 import { runTopicTurn } from '../ai/topic-elicitation.chain';
 
@@ -47,6 +50,9 @@ function threadFixture(overrides: Partial<TopicThread> = {}): TopicThread {
     closed_by: null,
     status: 'open',
     ad_hoc_dimensions: null,
+    inbound_token: 'tok-thread-1',
+    last_inbound_message_id: null,
+    last_outbound_message_id: null,
     created_at: new Date('2026-01-01'),
     updated_at: new Date('2026-01-01'),
     ...overrides
@@ -116,6 +122,40 @@ describe('TopicConversationService', () => {
 
       expect(mockSelectNext).not.toHaveBeenCalled();
       expect(result.map((m) => m.id)).toEqual(['ex-1', 'ex-2']);
+    });
+  });
+
+  describe('switchActiveTopicToEmail', () => {
+    const mockDeliverForTopic = EmailService.prototype.deliverForTopic as jest.Mock;
+
+    it('throws NO_ACTIVE_TOPIC when nothing is open', async () => {
+      builder.first.mockResolvedValueOnce(undefined);
+
+      await expect(service.switchActiveTopicToEmail('user-1')).rejects.toMatchObject({ code: 'NO_ACTIVE_TOPIC' });
+    });
+
+    it('emails the most recent assistant exchange without opening a new thread or touching existing exchanges', async () => {
+      const thread = threadFixture();
+      builder.first.mockResolvedValueOnce(thread);
+      builder.select.mockResolvedValueOnce([
+        exchangeFixture({ id: 'ex-opener', role: 'assistant', text: 'Opening question.' }),
+        exchangeFixture({ id: 'ex-reply', role: 'user', text: 'my reply' }),
+        exchangeFixture({ id: 'ex-followup', role: 'assistant', text: 'A follow-up question.' })
+      ]);
+      mockDeliverForTopic.mockResolvedValueOnce(undefined);
+
+      const result = await service.switchActiveTopicToEmail('user-1');
+
+      expect(mockDeliverForTopic).toHaveBeenCalledWith(thread, 'A follow-up question.');
+      expect(builder.insert).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ id: 'ex-followup', content: 'A follow-up question.' });
+    });
+
+    it('throws NO_PENDING_QUESTION when the open thread has no assistant exchange yet', async () => {
+      builder.first.mockResolvedValueOnce(threadFixture());
+      builder.select.mockResolvedValueOnce([]);
+
+      await expect(service.switchActiveTopicToEmail('user-1')).rejects.toMatchObject({ code: 'NO_PENDING_QUESTION' });
     });
   });
 

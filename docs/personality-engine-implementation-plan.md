@@ -26,7 +26,7 @@
 | 3 | Coverage-driven selection + topic-close | ✅ Done | Step 5 chat gets smarter; still no scores/insights shown |
 | 4 | Aggregation/confidence + calibration console | 🔶 Done with follow-ups | Scores computable internally; console spec'd, deferred |
 | 5 | Progression tiers + Sketch + insights | ✅ Done | First user-facing payoff; Step 5 completion goes tier-gated |
-| 6 | Channel switching (web ⇄ email) | ⬜ Not started | Step 5 opens to email per-topic |
+| 6 | Channel switching (web ⇄ email) | ✅ Done | Step 5 opens to email per-topic |
 | 7 | Calibration run → unlock scores + culture capture | ⬜ Not started | Numeric scores go live per-dimension; Step 8 tier-gated |
 | 8 | RAG convergence + guardrail enforcement | ⬜ Not started | Recruiter chat answers from evidence; §8 filters enforced in code |
 | 9 | Weekly scheduler | ⬜ Not started | Proactive cadence, pace/pause/unsubscribe, dormancy |
@@ -280,9 +280,32 @@ Legend: ⬜ Not started · 🟨 In progress · ✅ Done · 🔶 Done with follow
 
 **Done when:** a topic opened in live chat can be continued by real (or simulated, via `simulate-inbound-email.ts`) email reply days later, lands in the same `topic_thread`, and gets a correct new `occasion_id`.
 
-**Files touched:** *(fill in when done)*
+**Files touched:**
+- `backend/src/db/migrations/20260822000005_add_email_gateway_fields_to_topic_thread.ts` — `inbound_token`/`last_inbound_message_id`/`last_outbound_message_id` on `topic_thread`, mirroring `conversation_threads`' own email-gateway columns.
+- `backend/src/types/index.ts` — `TopicThread` gains the three fields above.
+- `backend/src/services/email.service.ts` — refactored around a shared private `send()`; existing `deliver()` (Step 3, untouched behavior) now calls it, and a new `deliverForTopic()` does the same for a `topic_thread` — subject falls back to `getQuestion(...)?.shortName ?? 'Your Stories'` for an ad hoc re-ask thread. New `.test.ts` (none existed before).
+- `backend/src/services/topic-conversation.service.ts` — new `switchActiveTopicToEmail()`: re-sends the active thread's most recent assistant exchange as a real email via `deliverForTopic`, without opening a new thread or touching existing exchanges.
+- `backend/src/routes/deep-prompts.routes.ts` — new. `POST /switch-to-email`, the one REST action Step 5 needs of its own (chat stays on the existing WebSocket).
+- `backend/src/app.ts` — registers the new route.
+- `backend/src/routes/webhooks.routes.ts` — inbound-email handler now tries `conversation_threads` then falls back to `topic_thread` for the token match, routing a `topic_thread` hit through `TopicConversationService.postUserMessage`/`deliverForTopic` instead of `ConversationService`/`deliver`. Step 3's path is byte-for-byte unchanged.
+- `backend/src/models/flow-steps.ts` — `deep_prompts.channels` gains `'email'`; description/comment updated (supersedes the onboarding spec's "live chat only" line for this step, per addendum §3, same pattern the addendum itself names).
+- `backend/src/scripts/simulate-inbound-email.ts` — `--step deep_prompts` resolves against the user's open `topic_thread` instead of the `logistics` `conversation_threads` row; `--token` now falls back to `topic_thread` too, matching the real handler's own lookup order.
+- `frontend/src/app/core/deep-prompts/deep-prompts.service.ts` — new. `switchToEmail()`.
+- `frontend/src/app/features/onboarding/deep-prompts/deep-prompts.component.ts` — "Continue this by email instead" button + confirmation/error state; dropped the "live chat only" copy.
 
-**Notes / decisions:** *(fill in when done)*
+**Notes / decisions:**
+- **Email columns live on `topic_thread`, not `exchange`.** A `reply+<token>@` address routes to a *thread* (spec §5: "session is not a concept... a topic thread spans days and channels"), and a thread is exactly what needs a stable, real-world-addressable identity — an individual `exchange` row has no reason to carry its own routing key. Same reasoning `conversation_threads` (not `messages`) already used for Step 3.
+- **`deliverForTopic`'s subject is the question's `shortName`, not a fixed step name.** `deliver()` (Step 3) uses `stepDef.name` because logistics is genuinely one continuous thread; Step 5 has many topic threads over time, so "Your Stories — Unposer" for every email would make a candidate's inbox impossible to tell apart. Falls back to the literal string `'Your Stories'` only for an ad hoc (reask) thread, which has no `LibraryQuestion` to name it after.
+- **No new "inbox" view for Step 5** (unlike Step 3's `inbox.routes.ts`/`InboxService`) — deliberately out of scope. The addendum's model is chat-by-default with an occasional candidate-initiated switch, not a parallel always-on channel choice the way Step 3's is; the candidate's own real email client *is* the Step 5 email UI. `switchActiveTopicToEmail` is the one action needed, not a whole parallel surface.
+- **`switchActiveTopicToEmail` re-sends the current pending question rather than requiring the candidate to already know their thread's address.** There's no scheduler yet (Iteration 9, deprioritized) to proactively deliver anything, so "switch to email" has to be the thing that puts a real, reply-able email in their inbox *right now* — otherwise the token would exist in the database with nothing to act on it.
+- **Probe-depth channel-awareness and the topic-close criteria's channel branching were already built in Iteration 3** (`topic-elicitation.chain.ts`'s `channel === 'email'` branch) as forward-looking design — confirmed still correct, no changes needed this iteration.
+- **Mid-thread continuity and `occasion_id` correctness are structural, not something this iteration had to build separately.** Every `exchange` already records its own real `channel` and a real `occasion_id` computed from its own `sent_at` (Iteration 1/4), and `getActiveThread`/`postUserMessage` were already channel-agnostic (Iteration 3's `channel` parameter). The only genuinely new plumbing was giving a thread a real address to be replied to at (`inbound_token`) and a way to deliver/receive on it — once that existed, a chat-then-email-then-chat sequence on one thread was already correct by construction. Verified live (see below).
+- **Full signed-webhook HTTP round-trip not live-tested this iteration** — doing so would have required restarting the API container with real (even if throwaway) `RESEND_API_KEY`/`RESEND_WEBHOOK_SECRET`/`EMAIL_INBOUND_DOMAIN` values, an environment change outside this iteration's own code that wasn't asked for. Instead, verified the exact DB-state transitions the webhook handler produces by calling `TopicConversationService.postUserMessage(userId, 'email', ...)` directly — the only *new* logic in `webhooks.routes.ts` itself is the two-table token lookup, which is a simple, low-risk sequential fallback (Svix signature verification and the Resend body-fetch path are unchanged, already-proven plumbing from the Step 3 work).
+
+**Verification:** `npm test` (23 suites / 148 tests, unchanged in count from Iteration 5 — Iteration 6 added roughly as many tests as it removed placeholder coverage), `npx tsc --noEmit`, `npm run build`, and `npm run test:ci` (17/17) all clean. The new migration rolled back and reapplied cleanly against the live dev Postgres. Live end-to-end against the real dev container (no email vars set, so outbound sends log-and-skip by design — see the decision above):
+1. `POST /api/deep-prompts/switch-to-email` with no open topic correctly 400s `NO_ACTIVE_TOPIC`.
+2. Opened a real topic (`Q0`) via `TopicConversationService.ensureOpeningExchanges`, then `switchToEmail` returned the pending question and stamped a real `inbound_token` on the thread; the api log showed the exact "would send deep_prompts topic email" line, confirming `deliverForTopic` fired with the question's own text.
+3. Called `TopicConversationService.postUserMessage(userId, 'email', ...)` directly against that same thread (standing in for the webhook's post-lookup call, per the decision above) — the reply landed on the *same* `topic_thread` id, as a `channel: 'email'` exchange, with a correct `occasion_id`, immediately followed by the model's own next `channel: 'email'` follow-up — a live, verified chat→email mid-thread switch with no lost continuity. All test data cleaned up after.
 
 ---
 

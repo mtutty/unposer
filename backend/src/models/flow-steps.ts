@@ -100,10 +100,14 @@ export const flowSteps: FlowStep[] = [
   {
     id: 'deep_prompts',
     name: 'Your Stories',
-    description: 'Live chat only — open-ended questions that surface how you actually work.',
+    description: 'Chat by default — open-ended questions that surface how you actually work. Move any topic to email whenever you want.',
     order: 3,
     stage: 'story',
-    channels: ['app'],
+    // Chat is still the default (the core set's real-time probing does the heaviest
+    // methodological lifting — spec §1 constraint 3), but per flow addendum §3 the candidate can
+    // move a topic to email at any point — see TopicConversationService.switchActiveTopicToEmail
+    // (Iteration 6). Superseded the onboarding spec's original "live chat only" line for this step.
+    channels: ['app', 'email'],
     // As of Iteration 3 (docs/personality-engine-implementation-plan.md), this step's live
     // conversation no longer runs on this criteria string / starter list at all —
     // topic-conversation.service.ts drives it entirely from the personality-engine question

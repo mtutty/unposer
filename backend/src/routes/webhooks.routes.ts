@@ -5,12 +5,16 @@ import { db } from '../db/connection';
 import { config } from '../config';
 import { AppError } from '../types';
 import { ConversationService } from '../services/conversation.service';
+import { TopicConversationService } from '../services/topic-conversation.service';
 import { EmailService } from '../services/email.service';
 import { FlowService } from '../services/flow.service';
 import { stripQuotedReply } from '../utils/email-reply';
 
 const router = Router();
 const conversationService = new ConversationService();
+// Step 5 (deep_prompts) email replies (Iteration 6, flow addendum §3) — logistics keeps using
+// conversationService above, untouched.
+const topicConversation = new TopicConversationService();
 const flowService = new FlowService();
 const emailService = new EmailService();
 
@@ -31,7 +35,10 @@ router.use(raw({ type: '*/*' }));
  * Inbound half of the real email gateway (email.service.ts is the outbound half). Turns a
  * Resend `email.received` webhook notification into the same `postUserMessage` call a chat
  * reply makes today, per CLAUDE.md's "Email-gateway design intent" — ConversationService itself
- * is untouched.
+ * is untouched. As of Iteration 6, the inbound_token can belong to either a Step 3 logistics
+ * conversation_threads row or a Step 5 deep_prompts topic_thread row (flow addendum §3) — the two
+ * id spaces never collide, so trying conversation_threads first and falling back to topic_thread
+ * is enough to route correctly without the token itself carrying any type marker.
  */
 router.post('/inbound-email', async (req, res) => {
   if (!config.email.enabled) {
@@ -95,8 +102,13 @@ router.post('/inbound-email', async (req, res) => {
       return;
     }
 
-    const thread = await db('conversation_threads').where({ inbound_token: tokenMatch[1] }).first();
-    if (!thread) {
+    // Step 3 (logistics, conversation_threads) and Step 5 (deep_prompts, topic_thread — Iteration
+    // 6, flow addendum §3) mint their inbound_tokens from independent uuid columns, so trying
+    // both in sequence is safe: a token can only ever match one or the other.
+    const conversationThread = await db('conversation_threads').where({ inbound_token: tokenMatch[1] }).first();
+    const topicThread = conversationThread ? null : await db('topic_thread').where({ inbound_token: tokenMatch[1] }).first();
+
+    if (!conversationThread && !topicThread) {
       console.warn(`[webhooks.routes] inbound email ${data.email_id} token ${tokenMatch[1]} matches no thread`);
       res.status(200).json({ ok: true, skipped: 'no thread for token' });
       return;
@@ -121,6 +133,26 @@ router.post('/inbound-email', async (req, res) => {
       return;
     }
 
+    if (topicThread) {
+      const outcome = await topicConversation.postUserMessage(topicThread.user_id, 'email', cleaned);
+      await db('topic_thread').where({ id: topicThread.id }).update({ last_inbound_message_id: data.message_id });
+      if (outcome.complete) {
+        await flowService.completeStep(topicThread.user_id, 'deep_prompts');
+      }
+      // Re-fetch: postUserMessage may have closed the thread and/or changed its state, and
+      // deliverForTopic only needs inbound_token (immutable) + the last_inbound_message_id just
+      // set above for In-Reply-To threading — cheaper to reuse topicThread with that one field
+      // patched than to round-trip the DB again for a value already known locally.
+      await emailService.deliverForTopic(
+        { ...topicThread, last_inbound_message_id: data.message_id },
+        outcome.assistantMessage.content,
+        { inReplyToMessageId: data.message_id }
+      );
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    const thread = conversationThread!;
     const outcome = await conversationService.postUserMessage(thread.user_id, thread.step, 'email', cleaned);
 
     await db('conversation_threads').where({ id: thread.id }).update({ last_inbound_message_id: data.message_id });
