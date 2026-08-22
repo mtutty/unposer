@@ -1,25 +1,12 @@
 import { db } from '../db/connection';
 import { DimensionKey } from '../types';
 import { LibraryQuestion, getQuestion, questionLibrary } from '../models/question-library';
+import { ALL_DIMENSIONS } from '../models/dimensions';
 
 // Personality engine (docs/personality-analysis-engine-spec.md §3 "Selection logic", tracked in
 // docs/personality-engine-implementation-plan.md Iteration 3).
 
 const CORE_SET = ['Q0', 'Q23', 'Q24', 'Q25'];
-
-const ALL_DIMENSIONS: DimensionKey[] = [
-  'emotional_stability',
-  'social_energy',
-  'dominance',
-  'agreeableness',
-  'conscientiousness',
-  'openness',
-  'change_orientation',
-  'thinking_style',
-  'detail_orientation',
-  'motivation',
-  'work_style'
-];
 
 interface DimensionCoverage {
   // Evidence-row count for this dimension across the candidate's whole history. A placeholder

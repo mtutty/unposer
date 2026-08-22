@@ -1,14 +1,13 @@
 import { db } from '../db/connection';
 import { AppError, Channel, DimensionKey, Exchange, Message, TopicThread } from '../types';
-import { getQuestion } from '../models/question-library';
+import { getQuestion, LibraryQuestion } from '../models/question-library';
 import { TopicSelectionService } from './topic-selection.service';
 import { DimensionScoringService } from './dimension-scoring.service';
 import { ScoringAggregationService } from './scoring-aggregation.service';
+import { ProgressionService } from './progression.service';
 import { EvidenceService } from './evidence.service';
 import { runTopicTurn } from '../ai/topic-elicitation.chain';
 import { computeOccasionId } from '../utils/occasion';
-
-const CORE_SET = ['Q0', 'Q23', 'Q24', 'Q25'];
 
 export interface TopicTurnOutcome {
   assistantMessage: Message;
@@ -31,6 +30,7 @@ export class TopicConversationService {
   private selection = new TopicSelectionService();
   private scoring = new DimensionScoringService();
   private aggregation = new ScoringAggregationService();
+  private progression = new ProgressionService();
   private evidence = new EvidenceService();
 
   /** Returns the open thread's full exchange history, or opens a freshly-selected topic and
@@ -49,16 +49,64 @@ export class TopicConversationService {
     return [this.toMessage(opener, thread)];
   }
 
+  /** Every exchange across every one of this user's topic threads (open, closed, ad hoc), oldest
+   *  first — replaces `ConversationService.getHistory(userId, 'deep_prompts')` as the transcript
+   *  source for profile generation (profile.service.ts), which read from the now-permanently-
+   *  empty `messages` table for `deep_prompts` ever since Iteration 3 moved that step onto this
+   *  service's own topic_thread/exchange model. Found and fixed as part of Iteration 5 — see the
+   *  plan doc's notes. */
+  async getFullTranscript(userId: string): Promise<Message[]> {
+    const threads: TopicThread[] = await db('topic_thread').where({ user_id: userId }).select('*');
+    if (threads.length === 0) return [];
+    const threadById = new Map(threads.map((t) => [t.id, t]));
+
+    const exchanges: Exchange[] = await db('exchange')
+      .whereIn(
+        'thread_id',
+        threads.map((t) => t.id)
+      )
+      .orderBy('sent_at', 'asc')
+      .select('*');
+
+    return exchanges.map((e) => this.toMessage(e, threadById.get(e.thread_id)!));
+  }
+
+  /** Opens a topic thread outside the fixed question library (flow addendum §6) — Step 6's
+   *  flag→re-ask correction loop is "just another topic," not a special case: its answer feeds
+   *  dimension_evidence exactly like a library question's would (see postUserMessage's handling
+   *  of an unrecognized question_id below), addressable by the normal coverage-selection scheme
+   *  once closed. `questionId` is caller-supplied and must be unique-enough not to collide with
+   *  the library (profile.service.ts uses `reask-<insight id>`); `dimensions` are the specific
+   *  dimensions this re-ask targets (derived from the flagged insight's own supporting evidence,
+   *  when known — see profile.service.ts), used only for dimension-scoring extraction, since
+   *  there's no LibraryQuestion.dimensionLoads for an ad hoc question to fall back on. */
+  async openAdHocTopic(userId: string, questionId: string, promptText: string, dimensions: DimensionKey[], channel: Channel): Promise<Message> {
+    // At most one open thread per user (Iteration 3's invariant) — if the candidate left Step 5
+    // mid-topic and flagged an insight from the profile page instead, interrupt that thread
+    // rather than silently orphaning it (getActiveThread only ever returns the most-recently-
+    // opened open thread, so a second one would make the first unreachable). No aggregation
+    // trigger here — it was interrupted, not completed, so nothing to re-score yet.
+    const existingOpen = await this.getActiveThread(userId);
+    if (existingOpen) {
+      await db('topic_thread')
+        .where({ id: existingOpen.id })
+        .update({ status: 'closed', closed_at: new Date(), closed_by: 'model', updated_at: new Date() });
+    }
+
+    const [thread] = await db('topic_thread')
+      .insert({ user_id: userId, question_id: questionId, ad_hoc_dimensions: JSON.stringify(dimensions) })
+      .returning('*');
+    const opener = await this.insertExchange(thread.id, 'assistant', promptText, channel);
+    return this.toMessage(opener, thread);
+  }
+
   async postUserMessage(userId: string, channel: Channel, content: string): Promise<TopicTurnOutcome> {
     const thread = await this.getActiveThread(userId);
     if (!thread) {
       throw new AppError('NO_ACTIVE_TOPIC', 'No open topic to reply to — resume the session first.', 400);
     }
 
-    const question = getQuestion(thread.question_id);
-    if (!question) {
-      throw new AppError('UNKNOWN_QUESTION', `Question "${thread.question_id}" is not in the library.`, 500);
-    }
+    const question = await this.resolveQuestion(thread);
 
     const userExchange = await this.insertExchange(thread.id, 'user', content, channel);
     const priorExchanges = await this.getExchanges(thread.id);
@@ -90,17 +138,20 @@ export class TopicConversationService {
         .where({ id: thread.id })
         .update({ status: 'closed', closed_at: new Date(), closed_by: turn.closedBy, updated_at: new Date() });
 
-      // Full re-score on topic-thread close (spec §9.2/Iteration 4) — awaited, unlike the
-      // extraction fire-and-forget above, for two reasons: it needs this turn's own extraction to
-      // have actually landed in dimension_evidence first (hence awaiting `extraction` here, where
+      // Full re-score on topic-thread close (spec §9.2) — awaited, unlike the extraction
+      // fire-and-forget above, for two reasons: it needs this turn's own extraction to have
+      // actually landed in dimension_evidence first (hence awaiting `extraction` here, where
       // every other turn leaves it to run in the background), and it's cheap, DB-only arithmetic
       // with no LLM call, so the added latency is negligible next to the round trip that already
-      // happened. Tier-transition re-scoring (the spec's other trigger point) has no tier engine
-      // to trigger from yet — Iteration 5's job, noted in the plan doc.
+      // happened. Progression re-computation (Iteration 5) follows immediately after, since tier
+      // is derived from exactly these scores — see progression.service.ts.
       await extraction;
-      await this.aggregation.recomputeDimensions(userId, dimensions).catch((error) => {
-        console.warn(`[topic-conversation.service] score aggregation failed for user ${userId}:`, error.message || error);
-      });
+      await this.aggregation
+        .recomputeDimensions(userId, dimensions)
+        .then(() => this.progression.recomputeTier(userId))
+        .catch((error) => {
+          console.warn(`[topic-conversation.service] score/progression aggregation failed for user ${userId}:`, error.message || error);
+        });
     }
 
     return { assistantMessage: this.toMessage(assistantExchange, thread), complete: await this.isFlowStepComplete(userId) };
@@ -108,6 +159,29 @@ export class TopicConversationService {
 
   private async getActiveThread(userId: string): Promise<TopicThread | undefined> {
     return db('topic_thread').where({ user_id: userId, status: 'open' }).orderBy('opened_at', 'desc').first();
+  }
+
+  /** A real library question, or — for an ad hoc re-ask thread (flow addendum §6) — a synthetic
+   *  LibraryQuestion-shaped stand-in built from the thread's own opening exchange (the re-ask
+   *  prompt itself, already stored verbatim by openAdHocTopic) and its stored ad_hoc_dimensions,
+   *  each treated as primary since there's no P/s distinction for a one-off follow-up. */
+  private async resolveQuestion(thread: TopicThread): Promise<LibraryQuestion> {
+    const libraryQuestion = getQuestion(thread.question_id);
+    if (libraryQuestion) return libraryQuestion;
+
+    if (thread.ad_hoc_dimensions?.length) {
+      const [opener] = await this.getExchanges(thread.id);
+      return {
+        id: thread.question_id,
+        shortName: 'Follow-up',
+        prompt: opener?.text ?? '',
+        dimensionLoads: Object.fromEntries(thread.ad_hoc_dimensions.map((d) => [d, 'P'])) as LibraryQuestion['dimensionLoads'],
+        heavy: false,
+        theme: 'Re-ask'
+      };
+    }
+
+    throw new AppError('UNKNOWN_QUESTION', `Question "${thread.question_id}" is not in the library.`, 500);
   }
 
   private async getExchanges(threadId: string): Promise<Exchange[]> {
@@ -141,22 +215,12 @@ export class TopicConversationService {
     };
   }
 
-  /**
-   * Placeholder flow-completion signal for flow_progress's deep_prompts entry — NOT the spec's
-   * tier engine. The flow addendum (§2) says Step 5 should complete when progression.tier first
-   * reaches Sketch, but that table has no computable tier logic yet (Iteration 5, which the plan
-   * doc explicitly calls out as "the one place flow-model code changes"). Standing in with "the
-   * core set is closed" — the four topics doing the real methodological lifting (spec §3,
-   * selection logic point 1) — which lands on roughly the same timescale the old fixed-story-count
-   * criterion did. Swap this method's body for a real progression.tier lookup in Iteration 5;
-   * callers (websocket/server.ts) don't need to change when it does.
-   */
+  /** Flow addendum §2: Step 5 completes in flow_progress the moment progression.tier first
+   *  reaches Sketch (any dimension at medium confidence) — not a fixed question count. Real tier
+   *  lookup as of Iteration 5 (progression.service.ts); the placeholder this replaced ("core set
+   *  closed") is gone. Callers (websocket/server.ts) didn't need to change. */
   private async isFlowStepComplete(userId: string): Promise<boolean> {
-    const row = await db('topic_thread')
-      .where({ user_id: userId, status: 'closed' })
-      .whereIn('question_id', CORE_SET)
-      .countDistinct('question_id as n')
-      .first();
-    return Number(row?.n ?? 0) >= CORE_SET.length;
+    const row = await db('progression').where({ user_id: userId }).first();
+    return !!row && row.tier !== 'none';
   }
 }

@@ -10,6 +10,9 @@ import { DimensionScoringService } from './dimension-scoring.service';
 jest.mock('./scoring-aggregation.service');
 import { ScoringAggregationService } from './scoring-aggregation.service';
 
+jest.mock('./progression.service');
+import { ProgressionService } from './progression.service';
+
 jest.mock('./evidence.service');
 import { EvidenceService } from './evidence.service';
 
@@ -43,6 +46,7 @@ function threadFixture(overrides: Partial<TopicThread> = {}): TopicThread {
     closed_at: null,
     closed_by: null,
     status: 'open',
+    ad_hoc_dimensions: null,
     created_at: new Date('2026-01-01'),
     updated_at: new Date('2026-01-01'),
     ...overrides
@@ -70,6 +74,7 @@ describe('TopicConversationService', () => {
   const mockSelectNext = TopicSelectionService.prototype.selectNextQuestion as jest.Mock;
   const mockExtractAndPersist = DimensionScoringService.prototype.extractAndPersist as jest.Mock;
   const mockRecomputeDimensions = ScoringAggregationService.prototype.recomputeDimensions as jest.Mock;
+  const mockRecomputeTier = ProgressionService.prototype.recomputeTier as jest.Mock;
   const mockIndexDeepPrompt = EvidenceService.prototype.indexDeepPromptSubstrate as jest.Mock;
 
   beforeEach(() => {
@@ -79,6 +84,7 @@ describe('TopicConversationService', () => {
     mockDb.mockReturnValue(builder);
     mockExtractAndPersist.mockResolvedValue([]);
     mockRecomputeDimensions.mockResolvedValue([]);
+    mockRecomputeTier.mockResolvedValue({ tier: 'sketch' });
     mockIndexDeepPrompt.mockResolvedValue(undefined);
   });
 
@@ -136,7 +142,7 @@ describe('TopicConversationService', () => {
       ]); // getExchanges (history)
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Tell me more.', closeTopic: false, closedBy: 'model' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Tell me more.' })]);
-      builder.first.mockResolvedValueOnce({ n: '4' }); // isFlowStepComplete
+      builder.first.mockResolvedValueOnce({ tier: 'sketch' }); // isFlowStepComplete: progression row lookup
 
       const outcome = await service.postUserMessage('user-1', 'app', 'my answer');
 
@@ -164,13 +170,15 @@ describe('TopicConversationService', () => {
       builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it, thanks.', closeTopic: true, closedBy: 'user' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it, thanks.' })]);
-      builder.first.mockResolvedValueOnce({ n: '0' });
+      builder.first.mockResolvedValueOnce({ tier: 'sketch' });
 
       await service.postUserMessage('user-1', 'app', "that's all I've got");
 
       expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'closed', closed_by: 'user' }));
       // Full re-score (spec §9.2) fires for every dimension Q1 loads on, not just its primary.
       expect(mockRecomputeDimensions).toHaveBeenCalledWith('user-1', Object.keys(getQuestion('Q1')!.dimensionLoads));
+      // Progression tier is recomputed right after, since it's derived from exactly these scores.
+      expect(mockRecomputeTier).toHaveBeenCalledWith('user-1');
     });
 
     it('does not let a failed aggregation recompute break the turn', async () => {
@@ -179,7 +187,7 @@ describe('TopicConversationService', () => {
       builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it, thanks.', closeTopic: true, closedBy: 'model' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it, thanks.' })]);
-      builder.first.mockResolvedValueOnce({ n: '0' });
+      builder.first.mockResolvedValueOnce({ tier: 'sketch' });
       mockRecomputeDimensions.mockRejectedValueOnce(new Error('boom'));
 
       const outcome = await service.postUserMessage('user-1', 'app', "that's all I've got");
@@ -187,17 +195,93 @@ describe('TopicConversationService', () => {
       expect(outcome.assistantMessage.content).toBe('Got it, thanks.');
     });
 
-    it('reports the step incomplete until all four core questions are closed', async () => {
+    it('reports the step incomplete while progression.tier is still "none" (flow addendum §2)', async () => {
       builder.first.mockResolvedValueOnce(threadFixture({ question_id: 'Q1' }));
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
       builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Ok.', closeTopic: false, closedBy: 'model' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant' })]);
-      builder.first.mockResolvedValueOnce({ n: '2' }); // only 2 of the 4 core questions closed so far
+      builder.first.mockResolvedValueOnce({ tier: 'none' });
 
       const outcome = await service.postUserMessage('user-1', 'app', 'partial');
 
       expect(outcome.complete).toBe(false);
+    });
+
+    it('handles an ad hoc (non-library) thread by building a synthetic question from its opener + stored dimensions', async () => {
+      const adHocThread = threadFixture({ question_id: 'reask-abc', ad_hoc_dimensions: ['dominance'] });
+      builder.first.mockResolvedValueOnce(adHocThread); // getActiveThread
+      // resolveQuestion's own getExchanges call, to read the opener text:
+      builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-opener', role: 'assistant', text: 'Say more about that call you made.' })]);
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user', text: 'my answer' })]); // insert user exchange
+      builder.select.mockResolvedValueOnce([
+        exchangeFixture({ id: 'ex-opener', role: 'assistant', text: 'Say more about that call you made.' }),
+        exchangeFixture({ id: 'ex-user', role: 'user', text: 'my answer' })
+      ]); // getExchanges (history)
+      mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it.', closeTopic: true, closedBy: 'model' });
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it.' })]);
+      builder.first.mockResolvedValueOnce({ tier: 'sketch' });
+
+      await service.postUserMessage('user-1', 'app', 'my answer');
+
+      expect(mockRunTopicTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ question: expect.objectContaining({ prompt: 'Say more about that call you made.', dimensionLoads: { dominance: 'P' } }) })
+      );
+      expect(mockExtractAndPersist).toHaveBeenCalledWith('ex-user', 'Say more about that call you made.', 'my answer', ['dominance']);
+    });
+  });
+
+  describe('getFullTranscript', () => {
+    it('returns every exchange across every thread, oldest first, with the right question_id metadata', async () => {
+      builder.select
+        .mockResolvedValueOnce([threadFixture({ id: 't1', question_id: 'Q0' }), threadFixture({ id: 't2', question_id: 'Q23' })]) // topic_thread
+        .mockResolvedValueOnce([
+          exchangeFixture({ id: 'ex-1', thread_id: 't1', role: 'assistant' }),
+          exchangeFixture({ id: 'ex-2', thread_id: 't2', role: 'assistant' })
+        ]); // exchange
+
+      const result = await service.getFullTranscript('user-1');
+
+      expect(result.map((m) => m.id)).toEqual(['ex-1', 'ex-2']);
+      expect(result[0].metadata['question_id']).toBe('Q0');
+      expect(result[1].metadata['question_id']).toBe('Q23');
+    });
+
+    it('returns an empty array without querying exchanges when the user has no threads at all', async () => {
+      builder.select.mockResolvedValueOnce([]);
+
+      const result = await service.getFullTranscript('user-1');
+
+      expect(result).toEqual([]);
+      expect(mockDb).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('openAdHocTopic', () => {
+    it('opens a thread carrying the given question_id and dimensions, and inserts the prompt verbatim', async () => {
+      builder.first.mockResolvedValueOnce(undefined); // getActiveThread: nothing currently open
+      builder.returning
+        .mockResolvedValueOnce([threadFixture({ question_id: 'reask-xyz', ad_hoc_dimensions: ['emotional_stability'] })]) // openThread-equivalent insert
+        .mockResolvedValueOnce([exchangeFixture({ text: 'A targeted follow-up question.' })]); // opener
+
+      const result = await service.openAdHocTopic('user-1', 'reask-xyz', 'A targeted follow-up question.', ['emotional_stability'], 'app');
+
+      expect(builder.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: 'user-1', question_id: 'reask-xyz', ad_hoc_dimensions: JSON.stringify(['emotional_stability']) })
+      );
+      expect(result).toMatchObject({ role: 'assistant', content: 'A targeted follow-up question.', step: 'deep_prompts' });
+    });
+
+    it('interrupts (closes) any already-open thread first, so it is never orphaned', async () => {
+      builder.first.mockResolvedValueOnce(threadFixture({ id: 'stale-thread', status: 'open' })); // getActiveThread
+      builder.returning
+        .mockResolvedValueOnce([threadFixture({ question_id: 'reask-xyz', ad_hoc_dimensions: [] })])
+        .mockResolvedValueOnce([exchangeFixture()]);
+
+      await service.openAdHocTopic('user-1', 'reask-xyz', 'prompt', [], 'app');
+
+      expect(builder.where).toHaveBeenCalledWith({ id: 'stale-thread' });
+      expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'closed', closed_by: 'model' }));
     });
   });
 });

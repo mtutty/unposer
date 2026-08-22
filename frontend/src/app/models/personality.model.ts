@@ -72,7 +72,9 @@ export interface DimensionScore {
   band: ScoreBand | null;
   tier: ProgressionTier | null;
   contributing_evidence_ids: string[];
+  distinct_questions: number;
   distinct_occasions: number;
+  variance_pattern: 'topic_linked' | 'occasion_linked' | 'monotonic_drift' | 'ambiguous' | null;
   computed_at: string;
 }
 
@@ -111,4 +113,14 @@ export interface Progression {
   pace_preference: PacePreference;
   next_question_id: string | null;
   last_contact_at: string | null;
+}
+
+// GET /api/profile/progression's response shape (Iteration 5) — a computed summary, not the raw
+// `progression` row above. Drives the persistent post-Sketch "answer one more question"
+// affordance and the "based on one session so far" caveat (flow addendum §5) on the
+// profile_review/sandbox pages.
+export interface ProgressionSummary {
+  tier: ProgressionTier;
+  dimensionsAtConfidence: DimensionKey[];
+  singleSessionDimensions: DimensionKey[];
 }

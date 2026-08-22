@@ -62,6 +62,15 @@ export interface ProfileGenerationInput {
   // (see ProfileService.applyGapCorrections) — treated as authoritative, not just more raw
   // material to weigh evenly against the rest.
   corrections?: Array<{ question: string; wrongAnswer: string; correction: string }>;
+  // Personality engine (Iteration 5, flow addendum §6): InsightService's own generated insights
+  // (spec §6's six evidence-cited types), when the candidate has reached at least Sketch tier —
+  // see profile.service.ts. Informational only, so this chain's own synthesis doesn't restate the
+  // same finding a second way — profile.service.ts appends the real PersonalityInsight rows to
+  // profile_data.insights *in code* after this call returns (their real `insight.id`, exact text,
+  // and a real cited evidence span), rather than trusting the model to reproduce them verbatim
+  // through structured output, which risks paraphrasing/dropping/mangling "verbatim" text and
+  // breaks the id traceability back to the source row.
+  personalityInsights?: Array<{ type: string; text: string }>;
 }
 
 /**
@@ -86,6 +95,14 @@ export async function generateCandidateProfile(input: ProfileGenerationInput): P
         'and flagged specific answers that did not reflect them, with a correction for each. ' +
         'Treat those corrections as authoritative ground truth — reconcile the summary, insights, ' +
         'and stories around them rather than weighing them as just one more data point.'
+      : '') +
+    (input.personalityInsights?.length
+      ? ' A separate scoring pipeline has already produced the personality-dimension insights ' +
+        'listed below for this candidate — they will be added to the profile automatically, ' +
+        'do not restate or re-derive any of them yourself. Your own `insights` (category ' +
+        'strength/collaboration/stress_response/growth_area/other) should cover only what those ' +
+        "don't already: resume/career narrative, goals, and transcript material outside what's " +
+        'already covered there.'
       : '');
 
   const human = [
@@ -102,6 +119,12 @@ export async function generateCandidateProfile(input: ProfileGenerationInput): P
                 `${i + 1}. Asked: "${c.question}"\n   Profile answered: "${c.wrongAnswer}"\n   Candidate says it should reflect: "${c.correction}"`
             )
             .join('\n')
+        ]
+      : []),
+    ...(input.personalityInsights?.length
+      ? [
+          'Already-covered personality insights (for context only — do not restate, see system instructions):',
+          input.personalityInsights.map((pi, i) => `${i + 1}. [${pi.type}] ${pi.text}`).join('\n')
         ]
       : [])
   ].join('\n\n');

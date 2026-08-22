@@ -196,7 +196,11 @@ export interface STARNarrative {
 
 export interface ProfileInsight {
   id: string;
-  category: 'strength' | 'collaboration' | 'stress_response' | 'growth_area' | 'other';
+  // The first five categories predate the personality engine; InsightType (spec §6, defined
+  // further down this file — forward reference is fine, these are just string-literal unions) is
+  // folded in verbatim so profile-generator.chain.ts can weave InsightService's output into
+  // profile_data.insights using the same type names rather than lossily remapping them.
+  category: 'strength' | 'collaboration' | 'stress_response' | 'growth_area' | 'other' | InsightType;
   statement: string;
   evidence: string;
   status: 'active' | 'flagged' | 'resolved';
@@ -318,6 +322,10 @@ export interface TopicThread {
   closed_at: Date | null;
   closed_by: ThreadCloseReason | null;
   status: TopicThreadStatus;
+  // Set only for an ad hoc (non-library) thread — the dimension(s) this re-ask targets, since
+  // there's no LibraryQuestion.dimensionLoads to read them from. Null for every ordinary
+  // library-question thread. See topic-conversation.service.ts's openAdHocTopic().
+  ad_hoc_dimensions: DimensionKey[] | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -374,7 +382,11 @@ export interface DimensionScore {
   band: ScoreBand | null;
   tier: ProgressionTier | null;
   contributing_evidence_ids: string[];
+  distinct_questions: number;
   distinct_occasions: number;
+  // The classification for this dimension's current evidence set (spec §4.4/§9.9) — null means
+  // stable (no meaningful variance detected). See scoring-aggregation.service.ts's persist().
+  variance_pattern: VarianceFlagType | null;
   computed_at: Date;
 }
 

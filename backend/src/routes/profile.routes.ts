@@ -4,14 +4,33 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { ProfileService } from '../services/profile.service';
 import { FlowService } from '../services/flow.service';
+import { ProgressionService } from '../services/progression.service';
 
 const router = Router();
 const profileService = new ProfileService();
 const flowService = new FlowService();
+const progressionService = new ProgressionService();
 
 router.get('/', requireAuth, async (req: AuthRequest, res, next) => {
   try {
     res.json(await profileService.getProfile(req.userId!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Personality engine (Iteration 5): the persistent post-Sketch affordance and "single session so
+// far" caveat (flow addendum §5) both read off this — tier plus which medium+ dimensions are
+// still single-occasion. Separate from GET / (the narrative profile itself) since a page can want
+// this before a profile exists yet (Sketch tier reached, profile not generated) or without
+// re-fetching the whole profile just to check tier.
+router.get('/progression', requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const [tier, temporalDepth] = await Promise.all([
+      progressionService.getTier(req.userId!),
+      progressionService.getTemporalDepthSummary(req.userId!)
+    ]);
+    res.json({ tier, ...temporalDepth });
   } catch (error) {
     next(error);
   }

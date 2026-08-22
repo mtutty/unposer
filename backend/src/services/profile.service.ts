@@ -1,12 +1,21 @@
 import { db } from '../db/connection';
-import { AppError, CandidateProfile, ProfileInsight } from '../types';
+import { AppError, CandidateProfile, DimensionKey, PersonalityInsight, ProfileInsight } from '../types';
 import { generateCandidateProfile, ProfileGenerationInput } from '../ai/profile-generator.chain';
 import { generateReaskQuestion } from '../ai/reask.chain';
-import { ConversationService } from './conversation.service';
+import { TopicConversationService } from './topic-conversation.service';
+import { ProgressionService } from './progression.service';
+import { InsightService } from './insight.service';
 import { EvidenceService } from './evidence.service';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class ProfileService {
-  private conversation = new ConversationService();
+  // Personality engine (Iteration 5): swapped from ConversationService — deep_prompts has run on
+  // topic_thread/exchange, not conversation_threads/messages, since Iteration 3. See
+  // TopicConversationService.getFullTranscript()'s comment for the bug this fixes.
+  private topicConversation = new TopicConversationService();
+  private progression = new ProgressionService();
+  private insights = new InsightService();
   private evidence = new EvidenceService();
 
   async getProfile(userId: string): Promise<CandidateProfile | null> {
@@ -32,22 +41,43 @@ export class ProfileService {
     }
 
     const logistics = await db('logistics_responses').where({ user_id: userId }).first();
-    const deepPromptMessages = await this.conversation.getHistory(userId, 'deep_prompts');
 
-    if (deepPromptMessages.filter((m) => m.role === 'user').length < 2) {
+    // Personality engine (flow addendum §6): gated on tier, not a raw message count — the old
+    // check counted rows in `messages`, which has been permanently empty for deep_prompts since
+    // Iteration 3 moved that step onto topic_thread/exchange (found while wiring this iteration;
+    // see the plan doc's Iteration 5 notes). Any tier past 'none' means at least one dimension
+    // has real evidence.
+    const tier = await this.progression.getTier(userId);
+    if (tier === 'none') {
       throw new AppError('INSUFFICIENT_DATA', 'Complete the deep-prompt conversation before generating a profile.', 400);
     }
+
+    const deepPromptTranscript = await this.topicConversation.getFullTranscript(userId);
+
+    // Regenerates the personality engine's own insights first (spec §6's source of record) so
+    // this chain can weave them in instead of independently re-deriving the same findings from
+    // raw transcript text (flow addendum §6). Sketch-tier profiles get whatever's eligible so
+    // far (possibly nothing, if the single dimension that reached medium confidence didn't
+    // produce a strong-enough insight) — narrative-only either way, since ProfileInsight has no
+    // numeric field to render regardless of tier.
+    const personalityInsights = await this.insights.regenerate(userId);
 
     const profileData = await generateCandidateProfile({
       resume: resume.structured_data,
       isCareerChanger: resume.is_career_changer,
       logistics: logistics?.data || {},
-      deepPromptTranscript: deepPromptMessages.map((m) => ({
+      deepPromptTranscript: deepPromptTranscript.map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content
       })),
-      corrections
+      corrections,
+      personalityInsights: personalityInsights.map((pi) => ({ type: pi.type, text: pi.text }))
     });
+
+    // Appended in code, not asked of the LLM (see profile-generator.chain.ts's comment) — uses
+    // the real `insight.id` so a later flagInsight() can trace a flagged entry back to the
+    // dimension(s) it came from.
+    profileData.insights = [...profileData.insights, ...(await this.toProfileInsights(personalityInsights))];
 
     const existing = await this.getProfile(userId);
 
@@ -57,7 +87,17 @@ export class ProfileService {
         status,
         version: existing ? existing.version + 1 : 1,
         profile_data: profileData,
-        correction_log: existing?.correction_log || [],
+        // Found via Iteration 5's live verification, root-caused via flagInsight's own crash
+        // below: `pg` sends a plain JS *array* parameter as a Postgres native array literal
+        // (`{...}`), not JSON — fine for an empty array (`{}` also happens to parse as valid,
+        // if wrong-shaped, jsonb: an empty *object*, which is exactly the stale bad value this
+        // guard defends against below), but produces malformed JSON for anything with real
+        // content (see flagInsight's correctionLog write). Plain *objects* (profile_data) don't
+        // hit this ambiguity — only arrays need the explicit JSON.stringify, matching every other
+        // array-typed jsonb write in this codebase (e.g. scoring-aggregation.service.ts's
+        // contributing_evidence_ids). Array.isArray guards existing rows still holding that
+        // pre-fix `{}` value.
+        correction_log: JSON.stringify(Array.isArray(existing?.correction_log) ? existing.correction_log : []),
         approved_at: status === 'approved' ? new Date() : null
       })
       .onConflict('user_id')
@@ -72,6 +112,22 @@ export class ProfileService {
     });
 
     return profile;
+  }
+
+  private async toProfileInsights(personalityInsights: PersonalityInsight[]): Promise<ProfileInsight[]> {
+    const result: ProfileInsight[] = [];
+    for (const pi of personalityInsights) {
+      const firstEvidenceId = pi.supporting_evidence_ids[0];
+      const evidenceRow = firstEvidenceId ? await db('dimension_evidence').where({ id: firstEvidenceId }).first() : undefined;
+      result.push({
+        id: pi.id,
+        category: pi.type,
+        statement: pi.text,
+        evidence: evidenceRow?.span ?? pi.text,
+        status: 'active'
+      });
+    }
+    return result;
   }
 
   async generateProfile(userId: string): Promise<CandidateProfile> {
@@ -125,7 +181,9 @@ export class ProfileService {
 
   /**
    * Step 6 correction path. Never edits the insight directly — flags it and hands back one
-   * targeted re-ask to route into the Step 5 chat, per spec.
+   * targeted re-ask to route into the Step 5 chat, per spec. Flow addendum §6: the re-ask is
+   * modeled as an ad hoc topic_thread, not a special case — see reaskDimensionsFor below for how
+   * it finds which dimension(s) to target.
    */
   async flagInsight(userId: string, insightId: string): Promise<{ profile: CandidateProfile; reaskQuestion: string }> {
     const profile = await this.getProfile(userId);
@@ -145,7 +203,7 @@ export class ProfileService {
     );
 
     const correctionLog = [
-      ...profile.correction_log,
+      ...(Array.isArray(profile.correction_log) ? profile.correction_log : []),
       {
         insightId,
         originalStatement: insight.statement,
@@ -159,27 +217,37 @@ export class ProfileService {
       .where({ user_id: userId })
       .update({
         profile_data: { ...profile.profile_data, insights: updatedInsights },
-        correction_log: correctionLog,
+        // See synthesizeProfile's insert above for why array-typed jsonb writes need explicit
+        // JSON.stringify (this is the exact write that first surfaced the bug).
+        correction_log: JSON.stringify(correctionLog),
         status: 'draft',
         updated_at: new Date()
       })
       .returning('*');
 
-    // Re-open the deep-prompt thread with the re-ask as the next question, same table the
-    // adaptive chat already reads from — no separate correction inbox.
-    const thread = await this.conversation.getOrCreateThread(userId, 'deep_prompts', 'app');
-    await db('conversation_threads').where({ id: thread.id }).update({ status: 'active', updated_at: new Date() });
-    await db('messages').insert({
-      thread_id: thread.id,
-      user_id: userId,
-      role: 'assistant',
-      content: reaskQuestion,
-      channel: 'app',
-      step: 'deep_prompts',
-      metadata: { reask: true, insightId }
-    });
+    const dimensions = await this.reaskDimensionsFor(insightId);
+    await this.topicConversation.openAdHocTopic(userId, `reask-${insightId}`, reaskQuestion, dimensions, 'app');
 
     return { profile: updated, reaskQuestion };
+  }
+
+  /** A flagged insight sourced from the personality engine has `id === insight.id` (see
+   *  toProfileInsights above) — this looks that row up and returns the dimension(s) its
+   *  supporting evidence actually came from, so the re-ask's answer feeds dimension_evidence for
+   *  the right dimension(s). Returns [] for an older/non-personality-engine insight (the original
+   *  five categories predate this table entirely, and its `id` is an LLM-generated slug, not a
+   *  real row id) — its re-ask still gets asked and indexed as raw substrate, just without
+   *  dimension-scoring extraction, since there's nothing to target. */
+  private async reaskDimensionsFor(insightId: string): Promise<DimensionKey[]> {
+    if (!UUID_RE.test(insightId)) return [];
+
+    const insightRow: PersonalityInsight | undefined = await db('insight').where({ id: insightId }).first();
+    if (!insightRow || insightRow.supporting_evidence_ids.length === 0) return [];
+
+    const rows: { dimension: DimensionKey }[] = await db('dimension_evidence')
+      .whereIn('id', insightRow.supporting_evidence_ids)
+      .distinct('dimension');
+    return rows.map((r) => r.dimension);
   }
 
   async approveProfile(userId: string): Promise<CandidateProfile> {

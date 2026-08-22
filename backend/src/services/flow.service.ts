@@ -86,6 +86,14 @@ export class FlowService {
       // Personality engine (Iteration 3) — topic_thread cascades to exchange and dimension_evidence
       // (ON DELETE CASCADE, see their migrations), so this one delete clears all three.
       await trx('topic_thread').where({ user_id: userId }).delete();
+      // Personality engine (Iteration 5) — dimension_score/variance_flag/progression/insight are
+      // each independently keyed by user_id (no FK to topic_thread), so a dev reset would
+      // otherwise leave them orphaned — same class of gap topic_thread's own cleanup above closed
+      // in Iteration 3.
+      await trx('dimension_score').where({ user_id: userId }).delete();
+      await trx('variance_flag').where({ user_id: userId }).delete();
+      await trx('progression').where({ user_id: userId }).delete();
+      await trx('insight').where({ user_id: userId }).delete();
       await trx('logistics_responses').where({ user_id: userId }).delete();
       await trx('resumes').where({ user_id: userId }).delete();
       await trx('candidate_profiles').where({ user_id: userId }).delete();

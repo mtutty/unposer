@@ -113,9 +113,9 @@ export const flowSteps: FlowStep[] = [
     // description/order fields generically — the text below documents the step's *intent* for
     // anyone skimming this file, it is not sent to any chain anymore.
     completionCriteria:
-      'Superseded — see topic-conversation.service.ts. Placeholder until Iteration 5 wires real ' +
-      'progression.tier gating (flow addendum §2): completes once the core question set (Q0, ' +
-      'Q23-25) has been asked and closed.',
+      'Superseded — see topic-conversation.service.ts. As of Iteration 5, this step completes the ' +
+      'moment progression.tier first reaches Sketch (any dimension at medium confidence), per ' +
+      'flow addendum §2 — not a fixed question count.',
     conversationStarters: [
       'Tell me about a time you disagreed with a teammate or manager about how to approach something. What happened?',
       'Walk me through a project that didn\'t go the way you planned. What did you do when it started slipping?',

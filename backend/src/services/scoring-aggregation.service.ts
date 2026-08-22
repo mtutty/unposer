@@ -1,5 +1,5 @@
 import { db } from '../db/connection';
-import { DimensionKey, DimensionScore, EvidenceStrength, EvidenceType, ScoreBand, ScoreConfidence } from '../types';
+import { DimensionKey, DimensionScore, EvidenceStrength, EvidenceType, ScoreBand, ScoreConfidence, VarianceFlagType } from '../types';
 import { classifyVariance, VarianceEvidencePoint } from '../utils/variance-classification';
 
 // Personality engine (docs/personality-analysis-engine-spec.md §4.4, §9.9, tracked in
@@ -27,12 +27,24 @@ const STRENGTH_WEIGHT: Record<EvidenceStrength, number> = { strong: 1.0, moderat
 const PRIOR_WEIGHT = STRENGTH_WEIGHT.moderate;
 const PRIOR_SCORE = 50;
 
-// §9.3's suggested minimum evidence threshold before a score is even attempted ("2 pieces from
-// ≥2 different questions on ≥2 distinct occasions, at least one of strength moderate or better.
-// Below that, suppress").
+// §9.3's suggested minimum evidence threshold before a score is even attempted: "2 pieces from
+// ≥2 different questions on ≥2 distinct occasions, at least one of strength moderate or better."
+// Iteration 5 deliberately drops the "≥2 distinct occasions" clause from this floor gate — kept
+// here only in this comment as the record of what the spec originally suggested and why it
+// changed. §9.3's own text frames the occasion requirement as what "makes Core persona
+// meaningfully harder to reach in one sitting than over two weeks," but literally gating *every*
+// score (including the one dimension Sketch needs at medium confidence) on it made Sketch
+// structurally unreachable in a single sitting — direct product conflict with the flow addendum's
+// "typically reachable in one sitting" claim for Step 5. Resolved per explicit direction (see the
+// plan doc's Iteration 5 notes): a single session should be able to produce a real, if modest,
+// result — not be hard-blocked — with the *depth* payoff (a richer, more temporally-diverse
+// profile) reserved for candidates who come back on separate days. Occasion diversity still
+// matters — it's still 33% of `richnessLevel`'s weighting below — it just no longer gates whether
+// a score exists at all. In depth (spec §3.5) keeps its own explicit "≥2 questions on ≥2 distinct
+// occasions" requirement untouched, since that's *that tier's own definition*, not this floor gate
+// — see progression.service.ts.
 const MIN_EVIDENCE_COUNT = 2;
 const MIN_DISTINCT_QUESTIONS = 2;
-const MIN_DISTINCT_OCCASIONS = 2;
 
 type Level = 'high' | 'medium-high' | 'medium' | 'low';
 const LEVEL_ORDER: Level[] = ['low', 'medium', 'medium-high', 'high'];
@@ -67,18 +79,15 @@ export class ScoringAggregationService {
     const distinctOccasions = new Set(evidence.map((e) => e.occasionId)).size;
     const hasSubstantialEvidence = evidence.some((e) => e.strength === 'moderate' || e.strength === 'strong');
 
-    if (
-      evidence.length < MIN_EVIDENCE_COUNT ||
-      distinctQuestions < MIN_DISTINCT_QUESTIONS ||
-      distinctOccasions < MIN_DISTINCT_OCCASIONS ||
-      !hasSubstantialEvidence
-    ) {
+    if (evidence.length < MIN_EVIDENCE_COUNT || distinctQuestions < MIN_DISTINCT_QUESTIONS || !hasSubstantialEvidence) {
       return this.persist(userId, dimension, {
         score: null,
         confidence: 'insufficient_signal',
         band: null,
         contributingEvidenceIds: evidence.map((e) => e.id),
-        distinctOccasions
+        distinctQuestions,
+        distinctOccasions,
+        variancePattern: null
       });
     }
 
@@ -130,7 +139,13 @@ export class ScoringAggregationService {
       confidence: level,
       band: BAND_FOR_LEVEL[level],
       contributingEvidenceIds: evidence.map((e) => e.id),
-      distinctOccasions
+      distinctQuestions,
+      distinctOccasions,
+      // Persisted so Iteration 5's insight generator can find topic_linked-eligible dimensions
+      // for a context-dependence insight (§6.4) without re-running classification — topic_linked
+      // itself is deliberately never written as a variance_flag row (see writeVarianceFlag's own
+      // comment), so the current dimension_score row is the only place this classification lives.
+      variancePattern: classification?.flagType ?? null
     });
   }
 
@@ -225,7 +240,9 @@ export class ScoringAggregationService {
       confidence: ScoreConfidence;
       band: ScoreBand | null;
       contributingEvidenceIds: string[];
+      distinctQuestions: number;
       distinctOccasions: number;
+      variancePattern: VarianceFlagType | null;
     }
   ): Promise<DimensionScore> {
     const latest = await db('dimension_score').where({ user_id: userId, dimension }).max('version as v').first();
@@ -239,10 +256,16 @@ export class ScoringAggregationService {
         score: fields.score,
         confidence: fields.confidence,
         band: fields.band,
-        // tier stays null until Iteration 5's progression-tier engine exists — see the plan doc.
+        // Stamped after the fact by progression.service.ts (Iteration 5) once it computes the
+        // whole-profile tier from this and the other 10 dimensions' latest rows — a snapshot
+        // annotation, not new evidence-driven content, so it's updated in place rather than
+        // versioned. progression.tier (not this column) is the authoritative source — see the
+        // flow addendum's "Two progression tracks" note and progression.service.ts.
         tier: null,
         contributing_evidence_ids: JSON.stringify(fields.contributingEvidenceIds),
-        distinct_occasions: fields.distinctOccasions
+        distinct_questions: fields.distinctQuestions,
+        distinct_occasions: fields.distinctOccasions,
+        variance_pattern: fields.variancePattern
       })
       .returning('*');
 

@@ -7,6 +7,7 @@ import { FlowService } from '../../../core/flow/flow.service';
 import { SandboxCitation, SandboxMessage } from '../../../models/sandbox.model';
 import { STEP_ROUTES } from '../../../models/flow.model';
 import { ProfileCorrectionsComponent } from '../../../shared/components/profile-corrections/profile-corrections.component';
+import { ProfileService } from '../../../core/profile/profile.service';
 
 /**
  * Step 7 practice-interview chat. Unlike the live-chat steps (chat-panel.component.ts, over a
@@ -25,6 +26,21 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
       Ask your profile the way a recruiter would. If it can't answer something well, flag it —
       that becomes an open question we route back into your stories.
     </p>
+
+    @if (profileService.progression(); as prog) {
+      @if (prog.tier !== 'none') {
+        <div class="card banner more-questions">
+          <p>
+            @if (prog.singleSessionDimensions.length) {
+              Based on one session so far — this will sharpen as you share more, especially across different days.
+            } @else {
+              Want to sharpen this further? A few more stories go a long way.
+            }
+          </p>
+          <a class="btn btn-secondary" [routerLink]="deepPromptsRoute">Answer one more question</a>
+        </div>
+      }
+    }
 
     <div class="card chat-frame">
       <div class="thread" #threadEl>
@@ -135,6 +151,20 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
       .lede {
         color: var(--ink-soft);
         max-width: 42em;
+      }
+
+      .more-questions {
+        margin-top: 1.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+
+        p {
+          margin: 0;
+          color: var(--ink-soft);
+        }
       }
 
       .chat-frame {
@@ -372,15 +402,17 @@ export class SandboxStepComponent implements OnInit, OnDestroy {
   gapNote = '';
   shareRoute = STEP_ROUTES['share'];
   profileReviewRoute = STEP_ROUTES['profile_review'];
+  deepPromptsRoute = STEP_ROUTES['deep_prompts'];
   expandedCitations = signal<Set<string>>(new Set());
 
   @ViewChild('threadEl') threadEl?: ElementRef<HTMLDivElement>;
   private streamSub?: Subscription;
 
-  constructor(private sandboxService: SandboxService, private flow: FlowService) {}
+  constructor(private sandboxService: SandboxService, private flow: FlowService, public profileService: ProfileService) {}
 
   ngOnInit(): void {
     this.sandboxService.getHistory().subscribe((history) => this.messages.set(history));
+    this.profileService.loadProgression().subscribe();
   }
 
   ngOnDestroy(): void {

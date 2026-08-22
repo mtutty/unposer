@@ -60,6 +60,34 @@ describe('ScoringAggregationService.recomputeDimension', () => {
     expect(builder.insert).toHaveBeenCalledWith(expect.objectContaining({ score: null, confidence: 'insufficient_signal', band: null }));
   });
 
+  it('emits a real score from a single-day session — the occasion requirement no longer gates the floor (Iteration 5)', async () => {
+    const threads = [
+      { id: 't1', question_id: 'Q1' },
+      { id: 't2', question_id: 'Q2' }
+    ];
+    // Both exchanges happened on the same calendar day — this is the exact shape that used to be
+    // rejected outright (distinctOccasions < 2) before the Iteration 5 fix.
+    const exchanges = [
+      { id: 'ex1', thread_id: 't1', occasion_id: '2026-01-01', sent_at: new Date('2026-01-01T09:00:00Z') },
+      { id: 'ex2', thread_id: 't2', occasion_id: '2026-01-01', sent_at: new Date('2026-01-01T09:05:00Z') }
+    ];
+    const evidenceRows = [
+      { id: 'de1', exchange_id: 'ex1', direction: 'high', strength: 'strong', type: 'explicit_statement' },
+      { id: 'de2', exchange_id: 'ex2', direction: 'high', strength: 'strong', type: 'explicit_statement' }
+    ];
+    mockEvidenceLoad(threads, exchanges, evidenceRows);
+    mockClassify.mockReturnValueOnce(null);
+    builder.first.mockResolvedValueOnce(undefined);
+    builder.returning.mockResolvedValueOnce([{}]);
+
+    const result = await service.recomputeDimension('user-1', 'work_style');
+
+    expect(result).not.toBeUndefined();
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ confidence: expect.not.stringMatching('insufficient_signal'), distinct_occasions: 1, distinct_questions: 2 })
+    );
+  });
+
   it('computes the weighted-mean score anchored at 50, using type_weight and strength_weight', async () => {
     const threads = [
       { id: 't1', question_id: 'Q1' },
@@ -83,7 +111,14 @@ describe('ScoringAggregationService.recomputeDimension', () => {
     // (0.6*50 + 100*1.0 + 0*0.48) / (0.6 + 1.0 + 0.48) = 130 / 2.08 = 62.5 → rounds to 63.
     // richness at 2 evidence / 2 questions / 2 occasions = 0.415 → 'low' → band 'suppressed'.
     expect(builder.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ score: 63, confidence: 'low', band: 'suppressed', distinct_occasions: 2 })
+      expect.objectContaining({
+        score: 63,
+        confidence: 'low',
+        band: 'suppressed',
+        distinct_questions: 2,
+        distinct_occasions: 2,
+        variance_pattern: null
+      })
     );
   });
 
@@ -163,7 +198,9 @@ describe('ScoringAggregationService.recomputeDimension', () => {
 
     const tableCalls = mockDb.mock.calls.map((c) => c[0]);
     expect(tableCalls).not.toContain('variance_flag');
-    expect(builder.insert).toHaveBeenCalledWith(expect.objectContaining({ confidence: 'medium' }));
+    // Not written as a variance_flag row, but still recorded on the dimension_score itself so the
+    // insight generator (Iteration 5) can find topic_linked-eligible dimensions later.
+    expect(builder.insert).toHaveBeenCalledWith(expect.objectContaining({ confidence: 'medium', variance_pattern: 'topic_linked' }));
   });
 
   it('increments dimension_score.version from the prior max rather than overwriting', async () => {

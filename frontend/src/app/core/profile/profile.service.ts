@@ -2,6 +2,7 @@ import { Injectable, computed, signal } from '@angular/core';
 import { finalize, tap } from 'rxjs';
 import { ApiService } from '../api/api.service';
 import { CandidateProfile } from '../../models/profile.model';
+import { ProgressionSummary } from '../../models/personality.model';
 
 /**
  * Holds the candidate's profile as shared, service-level state — same pattern as
@@ -27,10 +28,20 @@ export class ProfileService {
   // openQuestions array.
   pendingCorrectionCount = computed(() => this.profile()?.profile_data.openQuestions.length ?? 0);
 
+  // Personality engine (Iteration 5) — the persistent post-Sketch "answer one more question"
+  // affordance and "based on one session so far" caveat (flow addendum §5) both read off this.
+  // Not folded into `profile` itself: it can be meaningful before a profile exists at all (tier
+  // just reached Sketch, candidate hasn't clicked "Generate my profile" yet).
+  progression = signal<ProgressionSummary | null>(null);
+
   constructor(private api: ApiService) {}
 
   get() {
     return this.api.get<CandidateProfile | null>('/profile').pipe(tap((p) => this.profile.set(p)));
+  }
+
+  loadProgression() {
+    return this.api.get<ProgressionSummary>('/profile/progression').pipe(tap((p) => this.progression.set(p)));
   }
 
   generate() {

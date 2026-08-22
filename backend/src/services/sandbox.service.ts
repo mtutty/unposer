@@ -61,7 +61,11 @@ export class SandboxService {
   /** Backfills citations onto an already-saved (and already-shown) reply — run as a follow-up
    *  after the fact, see identifySandboxCitations, so the visible answer never waits on it. */
   async saveCitations(messageId: string, citations: SandboxCitation[]): Promise<SandboxMessage> {
-    const [message] = await db('sandbox_messages').where({ id: messageId }).update({ citations }).returning('*');
+    // JSON.stringify required — `pg` sends a bare JS array parameter as a Postgres native array
+    // literal, not JSON, which then fails (or silently mis-shapes an empty one) against a jsonb
+    // column. Found and root-caused via profile.service.ts's correction_log bug in Iteration 5;
+    // this is the same bug class in a different table, fixed alongside it — see the plan doc.
+    const [message] = await db('sandbox_messages').where({ id: messageId }).update({ citations: JSON.stringify(citations) }).returning('*');
     return message;
   }
 

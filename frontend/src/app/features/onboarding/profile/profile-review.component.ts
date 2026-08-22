@@ -13,6 +13,21 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
     <span class="eyebrow">Interview Yourself · Your Profile</span>
     <h1>Your profile</h1>
 
+    @if (profileService.progression(); as prog) {
+      @if (prog.tier !== 'none') {
+        <div class="card banner more-questions">
+          <p>
+            @if (prog.singleSessionDimensions.length) {
+              Based on one session so far — this will sharpen as you share more, especially across different days.
+            } @else {
+              Want to sharpen this further? A few more stories go a long way.
+            }
+          </p>
+          <a class="btn btn-secondary" [routerLink]="deepPromptsRoute">Answer one more question</a>
+        </div>
+      }
+    }
+
     @if (!profileService.profile()) {
       @if (!profileService.synthesizing()) {
         <p class="lede">
@@ -146,6 +161,20 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
         margin-top: 1.25rem;
       }
 
+      .more-questions {
+        margin-top: 1.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+
+        p {
+          margin: 0;
+          color: var(--ink-soft);
+        }
+      }
+
       .grid-2 {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -204,6 +233,7 @@ export class ProfileReviewStepComponent implements OnInit {
 
   ngOnInit(): void {
     this.profileService.get().subscribe();
+    this.profileService.loadProgression().subscribe();
   }
 
   generate(): void {
