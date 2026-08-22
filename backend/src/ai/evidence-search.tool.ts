@@ -15,14 +15,16 @@ const searchSchema = z.object({
  * in its system prompt — evidence.service.ts's two-phase search over profile_evidence
  * (distilled, current, authoritative) and conversation_evidence (raw substrate, supplementary).
  *
- * `userId` is closed over per-request rather than a model-controlled argument — it's a scoping
- * filter, same idea as sandbox-chat.chain.ts's describeProfile(profile) taking profile as a
- * parameter, not global state.
+ * `userId` and `audience` are both closed over per-request rather than model-controlled
+ * arguments — scoping/trust-boundary decisions, same idea as sandbox-chat.chain.ts's
+ * describeProfile(profile) taking profile as a parameter, not global state. `audience`
+ * specifically (spec §8, Iteration 8) is never something the model could talk its way out of by
+ * asking nicely — see evidence.service.ts's search() for why the filter lives at the SQL layer.
  */
-export function buildEvidenceSearchTool(userId: string) {
+export function buildEvidenceSearchTool(userId: string, audience: 'candidate' | 'recruiter') {
   return tool(
     async ({ query, k }: z.infer<typeof searchSchema>) => {
-      const hits = await evidenceService.search(userId, query, k ?? 5);
+      const hits = await evidenceService.search(userId, query, k ?? 5, audience);
       if (hits.length === 0) return 'No matching evidence found.';
 
       return hits

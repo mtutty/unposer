@@ -82,6 +82,7 @@ describe('TopicConversationService', () => {
   const mockRecomputeDimensions = ScoringAggregationService.prototype.recomputeDimensions as jest.Mock;
   const mockRecomputeTier = ProgressionService.prototype.recomputeTier as jest.Mock;
   const mockIndexDeepPrompt = EvidenceService.prototype.indexDeepPromptSubstrate as jest.Mock;
+  const mockIndexDimensionEvidenceSpans = EvidenceService.prototype.indexDimensionEvidenceSpans as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -92,6 +93,7 @@ describe('TopicConversationService', () => {
     mockRecomputeDimensions.mockResolvedValue([]);
     mockRecomputeTier.mockResolvedValue({ tier: 'sketch' });
     mockIndexDeepPrompt.mockResolvedValue(undefined);
+    mockIndexDimensionEvidenceSpans.mockResolvedValue(undefined);
   });
 
   describe('ensureOpeningExchanges', () => {
@@ -195,7 +197,15 @@ describe('TopicConversationService', () => {
         ]
       });
       expect(mockExtractAndPersist).toHaveBeenCalledWith('ex-user', question.prompt, 'my answer', Object.keys(question.dimensionLoads));
-      expect(mockIndexDeepPrompt).toHaveBeenCalled();
+      // §8 recruiter-visibility tagging (Iteration 8) — every indexed chunk carries which
+      // question it came from and whether that question is on the never-verbatim-to-recruiters
+      // list, so evidence.service.ts's search() can filter without knowing the question library.
+      expect(mockIndexDeepPrompt).toHaveBeenCalledWith(
+        'user-1',
+        expect.anything(),
+        expect.anything(),
+        { questionId: question.id, heavy: question.heavy }
+      );
       expect(builder.update).not.toHaveBeenCalled(); // topic stays open
       expect(mockRecomputeDimensions).not.toHaveBeenCalled(); // re-score only triggers on topic close (spec §9.2)
       expect(outcome).toEqual({
@@ -211,6 +221,8 @@ describe('TopicConversationService', () => {
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it, thanks.', closeTopic: true, closedBy: 'user' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it, thanks.' })]);
       builder.first.mockResolvedValueOnce({ tier: 'sketch' });
+      const extractedRows = [{ id: 'de-1', dimension: 'openness' }];
+      mockExtractAndPersist.mockResolvedValueOnce(extractedRows);
 
       await service.postUserMessage('user-1', 'app', "that's all I've got");
 
@@ -219,6 +231,10 @@ describe('TopicConversationService', () => {
       expect(mockRecomputeDimensions).toHaveBeenCalledWith('user-1', Object.keys(getQuestion('Q1')!.dimensionLoads));
       // Progression tier is recomputed right after, since it's derived from exactly these scores.
       expect(mockRecomputeTier).toHaveBeenCalledWith('user-1');
+      // §8: the just-extracted spans get indexed for RAG, tagged with the same question/heavy
+      // source as the whole-turn chunk — awaiting `extraction` (to gate aggregation) is what
+      // guarantees this has actually fired by the time postUserMessage returns.
+      expect(mockIndexDimensionEvidenceSpans).toHaveBeenCalledWith('user-1', extractedRows, { questionId: 'Q1', heavy: false });
     });
 
     it('does not let a failed aggregation recompute break the turn', async () => {

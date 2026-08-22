@@ -8,6 +8,12 @@ export interface SandboxChatParams {
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
   question: string;
   userId: string;
+  // 'candidate' (Step 7, the candidate's own practice interview) or 'recruiter' (Step 8, the
+  // public share link) — spec §8's guardrails apply only to the latter. Defaults to 'candidate'
+  // so every existing call site (and every test) keeps working unchanged; share.service.ts is the
+  // one caller that opts into 'recruiter'. See evidence-search.tool.ts/evidence.service.ts for
+  // where this actually gets enforced (at the retrieval SQL boundary, not just this prompt).
+  audience?: 'candidate' | 'recruiter';
 }
 
 /** Just the profile data, no framing — shared between the "answer as the candidate" system prompt
@@ -26,7 +32,7 @@ function describeProfile(profile: ProfileData): string {
   ].join('\n\n');
 }
 
-function buildSandboxSystemPrompt(profile: ProfileData): string {
+function buildSandboxSystemPrompt(profile: ProfileData, audience: 'candidate' | 'recruiter'): string {
   return [
     'You are answering questions AS this job candidate, in first person, to someone playing the ' +
     'role of a recruiter or hiring manager. Answer only from the profile context below — if asked ' +
@@ -36,8 +42,20 @@ function buildSandboxSystemPrompt(profile: ProfileData): string {
     'the human explicitly asks you to elaborate, go deeper, or say more. Break anything past a ' +
     "couple of sentences into short paragraphs — a blank line between them — rather than one dense " +
     'block; this is read on a screen, not delivered out loud.',
+    // spec §8 — the retrieval-side filter (evidence-search.tool.ts/evidence.service.ts) is the
+    // real enforcement; this is a second layer, not the only one, for the parts §8 states as
+    // framing rather than a hard verbatim-content rule (raw scores, unsupported inference).
+    audience === 'recruiter'
+      ? 'You are talking to an actual recruiter or hiring manager, not the candidate themselves — ' +
+        'never state a raw numeric score or trait label for any personality dimension (this ' +
+        "candidate's profile has none to state anyway). Every claim about how this candidate " +
+        'works must trace to specific job-relevant behavior in the evidence, never a vibe or a ' +
+        'general impression.'
+      : '',
     describeProfile(profile)
-  ].join('\n\n');
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 /**
@@ -63,8 +81,8 @@ function buildSandboxSystemPrompt(profile: ProfileData): string {
  * not). See sandbox.routes.ts, which forwards each chunk to the client as it arrives.
  */
 export async function* streamSandboxChat(params: SandboxChatParams): AsyncGenerator<string> {
-  const { profile, history, question, userId } = params;
-  const system = buildSandboxSystemPrompt(profile);
+  const { profile, history, question, userId, audience = 'candidate' } = params;
+  const system = buildSandboxSystemPrompt(profile, audience);
   const baseMessages = [
     { role: 'system', content: system },
     ...history.map((m) => ({ role: m.role, content: m.content })),
@@ -72,7 +90,7 @@ export async function* streamSandboxChat(params: SandboxChatParams): AsyncGenera
   ];
 
   try {
-    const evidenceTool = buildEvidenceSearchTool(userId);
+    const evidenceTool = buildEvidenceSearchTool(userId, audience);
     const toolCheck = await resolveToolCall(baseMessages, [evidenceTool], 0.5);
 
     let messages = baseMessages;

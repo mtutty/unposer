@@ -108,7 +108,10 @@ export class ShareService {
       profile: profile.profile_data as ProfileData,
       history: trimmedHistory,
       question,
-      userId: link.user_id
+      userId: link.user_id,
+      // spec §8 — this is the one call site that's actually recruiter-facing (an anonymous
+      // visitor via the public share link, not the candidate's own authenticated sandbox).
+      audience: 'recruiter'
     });
   }
 }

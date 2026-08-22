@@ -150,12 +150,23 @@ export class TopicConversationService {
     // same decoupling DimensionScoringService already documents: selection-layer concerns (which
     // dimensions a question serves) stay in the question library, not hardcoded here.
     const dimensions = Object.keys(question.dimensionLoads) as DimensionKey[];
-    const extraction = this.scoring.extractAndPersist(userExchange.id, question.prompt, content, dimensions).catch((error) => {
-      console.warn(`[topic-conversation.service] evidence extraction failed for user ${userId}:`, error.message || error);
-    });
+    const evidenceSource = { questionId: question.id, heavy: question.heavy };
+    const extraction = this.scoring
+      .extractAndPersist(userExchange.id, question.prompt, content, dimensions)
+      .then((rows) => {
+        // Indexed for RAG (spec §8/Iteration 8) as its own fire-and-forget step, same posture as
+        // indexDeepPromptSubstrate below — never gates the turn.
+        this.evidence.indexDimensionEvidenceSpans(userId, rows, evidenceSource).catch((error) => {
+          console.warn(`[topic-conversation.service] dimension-evidence indexing failed for user ${userId}:`, error.message || error);
+        });
+        return rows;
+      })
+      .catch((error) => {
+        console.warn(`[topic-conversation.service] evidence extraction failed for user ${userId}:`, error.message || error);
+      });
 
     this.evidence
-      .indexDeepPromptSubstrate(userId, this.toMessage(userExchange, thread), this.toMessage(assistantExchange, thread))
+      .indexDeepPromptSubstrate(userId, this.toMessage(userExchange, thread), this.toMessage(assistantExchange, thread), evidenceSource)
       .catch((error) => {
         console.warn(`[topic-conversation.service] evidence indexing failed for user ${userId}:`, error.message || error);
       });

@@ -94,6 +94,55 @@ describe('EvidenceService.indexDistilledProfile', () => {
   });
 });
 
+describe('EvidenceService §8 tagging (Iteration 8)', () => {
+  let service: EvidenceService;
+  let builder: ReturnType<typeof makeBuilder>;
+  const mockDb = db as unknown as jest.Mock;
+  const mockEmbedTexts = embedTexts as jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new EvidenceService();
+    builder = makeBuilder();
+    mockDb.mockReturnValue(builder);
+    mockEmbedTexts.mockResolvedValue([[0.1, 0.2]]);
+  });
+
+  it('indexDeepPromptSubstrate tags the chunk with question_id and heavy', async () => {
+    const userMsg = { content: 'my answer' } as any;
+    const assistantMsg = { id: 'ex-assistant', content: 'the question' } as any;
+
+    await service.indexDeepPromptSubstrate('user-1', userMsg, assistantMsg, { questionId: 'Q19', heavy: true });
+
+    const [rows] = builder.insert.mock.calls[0];
+    expect(rows[0].metadata).toEqual({ question_id: 'Q19', heavy: true });
+  });
+
+  it('indexDimensionEvidenceSpans embeds one chunk per evidence row, each tagged with the source question/heavy/dimension', async () => {
+    mockEmbedTexts.mockResolvedValue([[0.1], [0.2]]);
+    const rows = [
+      { id: 'de-1', span: 'span one', dimension: 'openness' },
+      { id: 'de-2', span: 'span two', dimension: 'motivation' }
+    ] as any;
+
+    await service.indexDimensionEvidenceSpans('user-1', rows, { questionId: 'Q1', heavy: false });
+
+    const [inserted] = builder.insert.mock.calls[0];
+    expect(inserted).toHaveLength(2);
+    expect(inserted[0]).toMatchObject({
+      content: 'span one',
+      metadata: { question_id: 'Q1', heavy: false, dimension: 'openness', source_id: 'de-1' }
+    });
+  });
+
+  it('indexDimensionEvidenceSpans is a no-op when there is no evidence to index', async () => {
+    await service.indexDimensionEvidenceSpans('user-1', [], { questionId: 'Q1', heavy: false });
+
+    expect(builder.insert).not.toHaveBeenCalled();
+    expect(mockEmbedTexts).not.toHaveBeenCalled();
+  });
+});
+
 describe('EvidenceService.search', () => {
   let service: EvidenceService;
   const mockEmbedText = embedText as jest.Mock;
@@ -140,5 +189,80 @@ describe('EvidenceService.search', () => {
     // Distilled hit stays first even though the raw hits score higher on raw similarity.
     expect(hits[0]).toMatchObject({ id: 'p1', tier: 'profile' });
     expect(hits.slice(1).every((h) => h.tier === 'conversation')).toBe(true);
+  });
+});
+
+describe('EvidenceService.search — recruiter audience (§8, Iteration 8)', () => {
+  let service: EvidenceService;
+  let builder: any;
+  const mockDb = db as unknown as jest.Mock;
+  const mockEmbedText = embedText as jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new EvidenceService();
+    mockEmbedText.mockResolvedValue([0.5, 0.5]);
+    (db as any).raw = jest.fn();
+    builder = {
+      where: jest.fn(() => builder),
+      whereRaw: jest.fn(() => builder),
+      count: jest.fn(() => builder),
+      first: jest.fn(),
+      insert: jest.fn().mockResolvedValue(undefined)
+    };
+    mockDb.mockReturnValue(builder);
+  });
+
+  it('adds the heavy-exclusion clause to the raw-substrate SQL only for a recruiter query', async () => {
+    const dbRaw = (db as any).raw as jest.Mock;
+    dbRaw.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+    builder.first.mockResolvedValueOnce({ n: '0' });
+
+    await service.search('user-1', 'how do they handle pressure', 5, 'recruiter');
+
+    const [conversationSql] = dbRaw.mock.calls[1];
+    expect(conversationSql).toContain("heavy')::boolean IS NOT TRUE");
+  });
+
+  it('adds no exclusion clause and writes no audit row for the default candidate audience', async () => {
+    const dbRaw = (db as any).raw as jest.Mock;
+    dbRaw.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+
+    await service.search('user-1', 'a question', 5);
+
+    const [conversationSql] = dbRaw.mock.calls[1];
+    expect(conversationSql).not.toContain('heavy');
+    expect(mockDb).not.toHaveBeenCalledWith('rag_audit_log');
+  });
+
+  it('logs the recruiter query with the returned count and the candidate\'s total restricted-row count', async () => {
+    const dbRaw = (db as any).raw as jest.Mock;
+    dbRaw
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: 'c1', content: 'safe content', metadata: {}, similarity: 0.6 }] });
+    builder.first.mockResolvedValueOnce({ n: '3' });
+
+    await service.search('user-1', 'the query text', 5, 'recruiter');
+
+    expect(mockDb).toHaveBeenCalledWith('rag_audit_log');
+    expect(builder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'user-1',
+        audience: 'recruiter',
+        query: 'the query text',
+        results_returned: 1,
+        results_excluded_restricted: 3
+      })
+    );
+  });
+
+  it('does not let a failed audit-log write break the actual search results', async () => {
+    const dbRaw = (db as any).raw as jest.Mock;
+    dbRaw.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+    builder.first.mockRejectedValueOnce(new Error('db down'));
+
+    const hits = await service.search('user-1', 'a question', 5, 'recruiter');
+
+    expect(hits).toEqual([]);
   });
 });

@@ -177,11 +177,12 @@ export class ConversationService {
       });
     }
 
-    if (step === 'deep_prompts') {
-      this.evidence.indexDeepPromptSubstrate(userId, userMessage, assistantMessage).catch((error) => {
-        console.warn(`[conversation.service] evidence indexing failed for user ${userId}:`, error.message || error);
-      });
-    }
+    // deep_prompts's own evidence indexing (dead here since Iteration 3 moved that step onto
+    // topic_thread/exchange/TopicConversationService — this class now only ever actually runs
+    // with step === 'logistics', see the class doc above) lives in
+    // topic-conversation.service.ts's postUserMessage instead, tagged with the question's own
+    // id/heavy flag for the §8 recruiter-visibility filter (Iteration 8) — a fixed step-level
+    // call here has no such per-question context to give it.
 
     return { assistantMessage, complete: turn.complete, thread: updatedThread };
   }
