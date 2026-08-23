@@ -91,7 +91,11 @@ export class EmailService {
   async sendInvite(email: string, customMessage?: string): Promise<void> {
     const loginUrl = `${config.frontendUrl}/login`;
     const body = [
-      "You've been invited to Unposer.",
+      "You've been invited to Unposer — a career platform built for people, not pipelines. " +
+        'No keyword bingo, no resume lottery, no ATS black box. Just real conversations that let ' +
+        'you show up as more than a document.',
+      "\nYour data is yours — we never sell or share it. The only use is powering your own AI " +
+        'practice interviews, and only with your permission.\n',
       customMessage ? `\n${customMessage}\n` : '',
       `Sign in here to get started: ${loginUrl}`
     ]

@@ -18,12 +18,32 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
     imports: [FormsModule],
     template: `
     <div class="screen">
-      <div class="intro">
+      <div class="pitch">
         <span class="stamp stamp-brass">v1 prototype</span>
         <h1>Unposer</h1>
+        <p class="tagline">A career platform built for people, not pipelines.</p>
         <p class="lede">
-          Welcome back. Sign in to pick up your career profile where you left off.
+          Job boards buried the humans on both sides of the table. Unposer digs them back out.
         </p>
+
+        <ul class="values">
+          <li>
+            <span class="eyebrow">People first, not engagement</span>
+            <p>We're not selling ads, upsells, or your attention. Unposer exists to help the right people find each other — nothing else.</p>
+          </li>
+          <li>
+            <span class="eyebrow">Your data is yours</span>
+            <p>We don't sell or share your profile with anyone. The one exception is your own AI practice interviews, and only with your permission.</p>
+          </li>
+          <li>
+            <span class="eyebrow">The hiring market is broken</span>
+            <p>ATS software scans resumes for things that don't say who you are, and rejects good candidates for reasons no one explains. Job boards turn hiring into a lottery against hundreds of applicants who may not even be real. Unposer replaces that noise with real conversation.</p>
+          </li>
+          <li>
+            <span class="eyebrow">Real depth, before anyone commits</span>
+            <p>We ask real questions over hours, days, or weeks — whatever pace fits you. Your answers become a profile that can speak for you in a practice interview. When a recruiter calls, you already know there's genuine interest and fit.</p>
+          </li>
+        </ul>
       </div>
 
       <form class="card panel" (ngSubmit)="onSubmit()">
@@ -81,27 +101,60 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
       .screen {
         min-height: 100%;
         display: grid;
-        place-items: center;
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+        align-items: center;
+        gap: 3.5rem;
         background: var(--cover);
-        padding: 3rem 1.5rem;
+        padding: 3rem 2rem;
+
+        @media (max-width: 860px) {
+          grid-template-columns: 1fr;
+          gap: 2.5rem;
+        }
       }
 
-      .intro {
-        max-width: 720px;
-        text-align: center;
+      .pitch {
+        max-width: 560px;
         color: var(--paper-text);
-        margin-bottom: 2.5rem;
+        justify-self: end;
+
+        @media (max-width: 860px) {
+          justify-self: stretch;
+          max-width: none;
+        }
 
         h1 {
           color: var(--paper-text);
+          margin-top: 0.6em;
         }
+      }
+
+      .tagline {
+        font-family: var(--font-display);
+        color: var(--brass);
+        font-size: 1.15rem;
+        margin: 0.25em 0 0;
       }
 
       .lede {
         color: var(--paper-text-soft);
         font-size: 1.05rem;
-        max-width: 32em;
-        margin: 0.75rem auto 0;
+        max-width: 34em;
+        margin: 0.75em 0 0;
+      }
+
+      .values {
+        list-style: none;
+        margin: 2rem 0 0;
+        padding: 0;
+        display: grid;
+        gap: 1.4rem;
+
+        li p {
+          color: var(--paper-text-soft);
+          margin: 0.35em 0 0;
+          line-height: 1.5;
+        }
       }
 
       .panel {
@@ -111,6 +164,12 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
         display: flex;
         flex-direction: column;
         gap: 1rem;
+        justify-self: start;
+
+        @media (max-width: 860px) {
+          justify-self: stretch;
+          max-width: none;
+        }
       }
 
       .error-line {
