@@ -2,7 +2,10 @@
 // Identity
 // ---------------------------------------------------------------------------
 
-export type UserRole = 'user' | 'admin';
+// 'invited' is a placeholder row created by an admin (AdminService.inviteUser) before the person
+// has ever signed in — see the migration that added it. It flips to 'user' automatically on
+// their first real OIDC login (AuthService's upsert flow) and is never set any other way.
+export type UserRole = 'user' | 'admin' | 'invited';
 export type UserStatus = 'active' | 'suspended';
 
 export interface User {
@@ -10,11 +13,14 @@ export interface User {
   email: string;
   name: string;
   avatar_url: string | null;
-  oidc_provider: 'google' | 'github' | 'linkedin' | 'facebook' | 'dev';
-  oidc_subject: string;
+  // null only while role === 'invited' — the person hasn't authenticated yet.
+  oidc_provider: 'google' | 'github' | 'linkedin' | 'facebook' | 'dev' | null;
+  oidc_subject: string | null;
   role: UserRole;
   status: UserStatus;
   last_login_at: Date | null;
+  invited_by: string | null;
+  invited_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }

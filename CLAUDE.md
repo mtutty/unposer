@@ -270,6 +270,7 @@ This is handled by `backend/docker-entrypoint.sh`
 - Parameterized queries via Knex (SQL injection protection)
 - Dev auth only when explicitly enabled
 - Never log sensitive data (passwords, tokens, API keys)
+- **Invitation-only mode** (`INVITE_ONLY_MODE` env flag, `config.inviteOnly.enabled`): when on, OIDC self-registration is blocked for any email without an existing `users` row — see `upsertOidcUser` in `backend/src/services/auth.service.ts`. A third role, `'invited'`, is a placeholder `users` row (email only, `oidc_provider`/`oidc_subject` null) created by an admin via `POST /api/admin/users/invite` (`AdminService.inviteUser`, Users page "Invite a user" form) and emailed a sign-in link (`EmailService.sendInvite`, same disabled-by-default Resend gate as the rest of the email gateway); it flips to `'user'` automatically — claiming that row rather than inserting a new one — the first time that email actually authenticates via OIDC, regardless of whether invite-only mode is on. `DELETE /api/admin/users/:id/invite` revokes a still-pending invite (400s on anything not role `'invited'`, so it can never delete a real account). The invite/revoke endpoints and dev-login both work regardless of the flag; it only gates the self-registration branch. The login page shows an "Invitation only" badge when the flag is on (`GET /api/auth/providers` includes `inviteOnly`).
 
 ## Known TODOs
 

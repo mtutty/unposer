@@ -18,7 +18,10 @@ const OAUTH_STATE_COOKIE = 'oauth_state';
 // Get available OIDC providers
 router.get('/providers', (req, res) => {
   res.json({
-    providers: authService.getAvailableProviders()
+    providers: authService.getAvailableProviders(),
+    // Login page indicator — see config.inviteOnly. Purely informational; the actual gate lives
+    // in AuthService.upsertOidcUser, not here.
+    inviteOnly: config.inviteOnly.enabled
   });
 });
 
@@ -109,7 +112,11 @@ function registerOidcRoutes(
       redirectTo(user.role === 'admin' ? '/admin/users' : '/dashboard');
     } catch (error: any) {
       console.error(`[auth.routes] ${provider} sign-in failed:`, error.message || error);
-      redirectTo('/login?error=oauth_failed');
+      // INVITE_ONLY (no invite on file, invite-only mode on) and EMAIL_IN_USE (email already
+      // belongs to a different account) are the two AppErrors upsertOidcUser can throw — give
+      // the login page enough to show a specific message for each rather than a generic failure.
+      const code = error.code === 'INVITE_ONLY' || error.code === 'EMAIL_IN_USE' ? error.code.toLowerCase() : 'oauth_failed';
+      redirectTo(`/login?error=${code}`);
     }
   });
 }

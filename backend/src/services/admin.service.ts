@@ -20,6 +20,7 @@ import { TopicConversationService } from './topic-conversation.service';
 import { SandboxService } from './sandbox.service';
 import { ShareService } from './share.service';
 import { ProfileService } from './profile.service';
+import { EmailService } from './email.service';
 
 // Admin/user-management foundation (see the migration's header comment for why this exists as
 // part of Iteration 4 — prerequisite infrastructure for the personality engine's calibration
@@ -67,6 +68,7 @@ export class AdminService {
   private sandbox = new SandboxService();
   private share = new ShareService();
   private profile = new ProfileService();
+  private email = new EmailService();
 
   async listUsers(filters: UserListFilters = {}): Promise<UserListResult> {
     const limit = filters.limit ?? DEFAULT_LIMIT;
@@ -173,5 +175,58 @@ export class AdminService {
       throw new AppError('NOT_FOUND', 'User not found', 404);
     }
     return user;
+  }
+
+  /**
+   * Invitation-only mode's admin-side half (see config.inviteOnly and the "invited" role's
+   * doc-comment in types/index.ts). Creates a placeholder users row with no oidc_provider/
+   * oidc_subject yet — those get filled in, and role flips to 'user', on the invited person's
+   * first real OIDC login (see upsertOidcUser in auth.service.ts). Works regardless of whether
+   * invite-only mode is currently on; that flag only gates *self*-registration.
+   *
+   * Re-inviting an email that's already pending (role 'invited') just re-sends the email rather
+   * than erroring — a reasonable "resend invite" affordance without a separate endpoint. Any
+   * other existing account for that email is a hard conflict.
+   */
+  async inviteUser(email: string, invitedByUserId: string, customMessage?: string): Promise<User> {
+    const existing = await db('users').whereRaw('lower(email) = lower(?)', [email]).first();
+    if (existing && existing.role !== 'invited') {
+      throw new AppError('EMAIL_IN_USE', 'An account with this email already exists', 409);
+    }
+
+    let user: User;
+    if (existing) {
+      [user] = await db('users')
+        .where({ id: existing.id })
+        .update({ invited_by: invitedByUserId, invited_at: new Date(), updated_at: new Date() })
+        .returning('*');
+    } else {
+      [user] = await db('users')
+        .insert({
+          email,
+          name: email,
+          role: 'invited',
+          invited_by: invitedByUserId,
+          invited_at: new Date()
+        })
+        .returning('*');
+    }
+
+    await this.email.sendInvite(email, customMessage);
+    return user;
+  }
+
+  /** Deletes a pending invite outright — never a real account (see the role guard below), so
+   *  there's no data of theirs to lose. Lets an admin clean up a typo'd invite without waiting
+   *  for it to just sit there forever. */
+  async revokeInvite(id: string): Promise<void> {
+    const user = await this.getUser(id);
+    if (!user) {
+      throw new AppError('NOT_FOUND', 'User not found', 404);
+    }
+    if (user.role !== 'invited') {
+      throw new AppError('NOT_AN_INVITE', 'Only a pending invite can be revoked', 400);
+    }
+    await db('users').where({ id }).delete();
   }
 }

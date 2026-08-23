@@ -2,6 +2,7 @@ jest.mock('../config', () => ({
   config: {
     frontendUrl: 'http://localhost:4200',
     nodeEnv: 'test',
+    inviteOnly: { enabled: false },
     oidc: {
       google: { clientId: '', clientSecret: '' },
       github: { clientId: '', clientSecret: '' }
@@ -53,7 +54,17 @@ describe('auth.routes', () => {
       const res = await request(app).get('/providers');
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ providers: ['google'] });
+      expect(res.body).toEqual({ providers: ['google'], inviteOnly: false });
+    });
+
+    it('reflects config.inviteOnly.enabled', async () => {
+      mockAuthService.getAvailableProviders.mockReturnValue([]);
+      (config.inviteOnly as any).enabled = true;
+
+      const res = await request(app).get('/providers');
+
+      expect(res.body.inviteOnly).toBe(true);
+      (config.inviteOnly as any).enabled = false;
     });
   });
 
@@ -177,6 +188,28 @@ describe('auth.routes', () => {
 
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('http://localhost:4200/login?error=oauth_failed');
+    });
+
+    it('redirects to /login?error=invite_only when upsertOidcUser rejects with an INVITE_ONLY AppError', async () => {
+      mockAuthService.googleLogin.mockRejectedValue(new AppError('INVITE_ONLY', 'nope', 403));
+
+      const res = await request(app)
+        .get('/google/callback')
+        .query({ state: 'abc', code: 'authcode' })
+        .set('Cookie', 'oauth_state=abc');
+
+      expect(res.headers.location).toBe('http://localhost:4200/login?error=invite_only');
+    });
+
+    it('redirects to /login?error=email_in_use when upsertOidcUser rejects with an EMAIL_IN_USE AppError', async () => {
+      mockAuthService.googleLogin.mockRejectedValue(new AppError('EMAIL_IN_USE', 'nope', 409));
+
+      const res = await request(app)
+        .get('/google/callback')
+        .query({ state: 'abc', code: 'authcode' })
+        .set('Cookie', 'oauth_state=abc');
+
+      expect(res.headers.location).toBe('http://localhost:4200/login?error=email_in_use');
     });
   });
 

@@ -9,6 +9,7 @@ import { TopicConversationService } from './topic-conversation.service';
 import { SandboxService } from './sandbox.service';
 import { ShareService } from './share.service';
 import { ProfileService } from './profile.service';
+import { EmailService } from './email.service';
 
 function makeBuilder() {
   const builder: any = {};
@@ -16,13 +17,16 @@ function makeBuilder() {
   builder.andWhere = jest.fn(() => builder);
   builder.whereILike = jest.fn(() => builder);
   builder.orWhereILike = jest.fn(() => builder);
+  builder.whereRaw = jest.fn(() => builder);
   builder.orderBy = jest.fn(() => builder);
   builder.limit = jest.fn(() => builder);
   builder.offset = jest.fn(); // terminal for the list query
   builder.count = jest.fn(() => builder);
-  builder.first = jest.fn(); // terminal for the count query / getUser
+  builder.first = jest.fn(); // terminal for the count query / getUser / email lookup
   builder.update = jest.fn(() => builder);
-  builder.returning = jest.fn(); // terminal for updateUser
+  builder.insert = jest.fn(() => builder);
+  builder.delete = jest.fn(); // terminal for revokeInvite
+  builder.returning = jest.fn(); // terminal for updateUser/inviteUser
   return builder;
 }
 
@@ -172,6 +176,64 @@ describe('AdminService', () => {
 
       expect(resetSpy).toHaveBeenCalledWith('u1');
       expect(result).toEqual({ id: 'u1', email: 'a@b.com', role: 'user' });
+    });
+  });
+
+  describe('inviteUser', () => {
+    it('refuses when the email already belongs to a non-invited account', async () => {
+      builder.first.mockResolvedValueOnce({ id: 'u1', email: 'a@b.com', role: 'user' });
+
+      await expect(service.inviteUser('a@b.com', 'admin-1')).rejects.toMatchObject({ code: 'EMAIL_IN_USE' });
+    });
+
+    it('creates a role=invited row and sends the invite email when the email is new', async () => {
+      builder.first.mockResolvedValueOnce(undefined);
+      builder.returning.mockResolvedValueOnce([{ id: 'u2', email: 'new@b.com', role: 'invited' }]);
+      const sendSpy = jest.spyOn(EmailService.prototype, 'sendInvite').mockResolvedValueOnce();
+
+      const result = await service.inviteUser('new@b.com', 'admin-1', 'Welcome!');
+
+      expect(builder.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'new@b.com', role: 'invited', invited_by: 'admin-1' })
+      );
+      expect(sendSpy).toHaveBeenCalledWith('new@b.com', 'Welcome!');
+      expect(result).toEqual({ id: 'u2', email: 'new@b.com', role: 'invited' });
+    });
+
+    it('re-sends the invite (updates invited_at) instead of erroring when already pending', async () => {
+      builder.first.mockResolvedValueOnce({ id: 'u2', email: 'new@b.com', role: 'invited' });
+      builder.returning.mockResolvedValueOnce([{ id: 'u2', email: 'new@b.com', role: 'invited' }]);
+      const sendSpy = jest.spyOn(EmailService.prototype, 'sendInvite').mockResolvedValueOnce();
+
+      await service.inviteUser('new@b.com', 'admin-1');
+
+      expect(builder.insert).not.toHaveBeenCalled();
+      expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ invited_by: 'admin-1' }));
+      expect(sendSpy).toHaveBeenCalledWith('new@b.com', undefined);
+    });
+  });
+
+  describe('revokeInvite', () => {
+    it('throws NOT_FOUND when the user does not exist', async () => {
+      builder.first.mockResolvedValueOnce(undefined);
+
+      await expect(service.revokeInvite('missing')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('refuses to revoke a non-invited account', async () => {
+      builder.first.mockResolvedValueOnce({ id: 'u1', email: 'a@b.com', role: 'user' });
+
+      await expect(service.revokeInvite('u1')).rejects.toMatchObject({ code: 'NOT_AN_INVITE' });
+      expect(builder.delete).not.toHaveBeenCalled();
+    });
+
+    it('deletes a pending invite', async () => {
+      builder.first.mockResolvedValueOnce({ id: 'u2', email: 'new@b.com', role: 'invited' });
+
+      await service.revokeInvite('u2');
+
+      expect(builder.where).toHaveBeenCalledWith({ id: 'u2' });
+      expect(builder.delete).toHaveBeenCalled();
     });
   });
 });

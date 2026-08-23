@@ -67,4 +67,15 @@ export class AdminService {
   resetUserData(id: string, confirmEmail: string): Observable<{ user: User }> {
     return this.api.post<{ user: User }>(`/admin/users/${id}/reset`, { confirmEmail });
   }
+
+  /** Creates a role='invited' placeholder and emails the person a sign-in link — see
+   *  AdminService.inviteUser. Works regardless of invitation-only mode. */
+  inviteUser(email: string, message?: string): Observable<{ user: User }> {
+    return this.api.post<{ user: User }>('/admin/users/invite', { email, message: message || undefined });
+  }
+
+  /** Deletes a pending invite (server 400s if the target isn't role 'invited'). */
+  revokeInvite(id: string): Observable<void> {
+    return this.api.delete<void>(`/admin/users/${id}/invite`);
+  }
 }

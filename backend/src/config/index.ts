@@ -40,6 +40,15 @@ export const config = {
     adminPassword: process.env.DEV_AUTH_ADMIN_PASSWORD || 'devadminpass'
   },
 
+  // Invitation-only mode: when enabled, OIDC self-registration is blocked for any email that
+  // doesn't already have a users row (see upsertOidcUser in auth.service.ts) — only an
+  // admin-created 'invited' row (AdminService.inviteUser) can turn into a real account. The
+  // invite/revoke admin endpoints and dev-login both work regardless of this flag; it only gates
+  // the self-registration branch of OIDC login.
+  inviteOnly: {
+    enabled: process.env.INVITE_ONLY_MODE === 'true'
+  },
+
   oidc: {
     google: {
       clientId: process.env.OIDC_GOOGLE_CLIENT_ID || '',

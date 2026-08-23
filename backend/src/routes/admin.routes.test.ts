@@ -87,6 +87,62 @@ describe('admin.routes', () => {
         offset: 20
       });
     });
+
+    it("accepts role='invited' (pending-invite filter)", async () => {
+      mockAdminService.listUsers.mockResolvedValue({ users: [], total: 0 } as any);
+
+      await asAdmin(request(app).get('/users')).query({ role: 'invited' });
+
+      expect(mockAdminService.listUsers).toHaveBeenCalledWith(expect.objectContaining({ role: 'invited' }));
+    });
+  });
+
+  describe('POST /users/invite', () => {
+    it('rejects an invalid email before calling the service', async () => {
+      const res = await asAdmin(request(app).post('/users/invite')).send({ email: 'not-an-email' });
+
+      expect(res.status).toBe(400);
+      expect(mockAdminService.inviteUser).not.toHaveBeenCalled();
+    });
+
+    it('creates the invite, passing the caller id and optional message through', async () => {
+      mockAdminService.inviteUser.mockResolvedValue({ id: 'u3', email: 'new@example.com', role: 'invited' } as any);
+
+      const res = await asAdmin(request(app).post('/users/invite')).send({ email: 'new@example.com', message: 'Welcome!' });
+
+      expect(res.status).toBe(201);
+      expect(mockAdminService.inviteUser).toHaveBeenCalledWith('new@example.com', 'admin-1', 'Welcome!');
+      expect(res.body.user.role).toBe('invited');
+    });
+
+    it('propagates a service AppError (e.g. email already in use)', async () => {
+      mockAdminService.inviteUser.mockRejectedValue(new AppError('EMAIL_IN_USE', 'An account with this email already exists', 409));
+
+      const res = await asAdmin(request(app).post('/users/invite')).send({ email: 'taken@example.com' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('EMAIL_IN_USE');
+    });
+  });
+
+  describe('DELETE /users/:id/invite', () => {
+    it('revokes the invite and returns 204', async () => {
+      mockAdminService.revokeInvite.mockResolvedValue(undefined);
+
+      const res = await asAdmin(request(app).delete('/users/u3/invite'));
+
+      expect(res.status).toBe(204);
+      expect(mockAdminService.revokeInvite).toHaveBeenCalledWith('u3');
+    });
+
+    it('propagates a service AppError (e.g. target is not a pending invite)', async () => {
+      mockAdminService.revokeInvite.mockRejectedValue(new AppError('NOT_AN_INVITE', 'Only a pending invite can be revoked', 400));
+
+      const res = await asAdmin(request(app).delete('/users/u2/invite'));
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('NOT_AN_INVITE');
+    });
   });
 
   describe('GET /users/:id', () => {

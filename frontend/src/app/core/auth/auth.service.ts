@@ -39,7 +39,7 @@ export class AuthService {
     );
   }
 
-  getProviders(): Observable<{ providers: string[] }> {
-    return this.api.get<{ providers: string[] }>('/auth/providers');
+  getProviders(): Observable<{ providers: string[]; inviteOnly: boolean }> {
+    return this.api.get<{ providers: string[]; inviteOnly: boolean }>('/auth/providers');
   }
 }

@@ -74,26 +74,54 @@ async function upsertOidcUser(params: {
     return user;
   }
 
-  try {
+  // No account already linked to this (provider, subject) — either this email has a pending
+  // invite (role 'invited', no oidc_* yet — see AdminService.inviteUser) that this login should
+  // claim, or it's brand new. Case-insensitive to match how AdminService.inviteUser looks
+  // invites up.
+  const existingByEmail = await db('users').whereRaw('lower(email) = lower(?)', [params.email]).first();
+
+  if (existingByEmail && existingByEmail.role === 'invited') {
+    // First real login for an invited user: claim the placeholder row rather than inserting a
+    // new one — fills in the oidc identity and flips role 'invited' -> 'user'. invited_by/
+    // invited_at are left as-is (see the migration's comment) so the admin list keeps showing
+    // who invited them.
     [user] = await db('users')
-      .insert({
-        email: params.email,
-        name: params.name || params.email,
+      .where({ id: existingByEmail.id })
+      .update({
+        name: params.name || existingByEmail.email,
         avatar_url: params.avatarUrl,
         oidc_provider: params.provider,
-        oidc_subject: params.subject
+        oidc_subject: params.subject,
+        role: 'user',
+        updated_at: new Date()
       })
       .returning('*');
     return user;
-  } catch (err: any) {
-    if (err.code === '23505') {
-      // users.email is globally unique — this email already belongs to a different account
-      // (e.g. a dev-created one, or a different provider). No account-linking policy exists
-      // yet, so surface it clearly rather than crashing with a raw constraint-violation error.
-      throw new AppError('EMAIL_IN_USE', 'An account with this email already exists', 409);
-    }
-    throw err;
   }
+
+  if (existingByEmail) {
+    // users.email is globally unique — this email already belongs to a different, non-invited
+    // account (e.g. a dev-created one, or a different provider). No account-linking policy
+    // exists yet, so surface it clearly rather than letting the insert below crash with a raw
+    // constraint-violation error.
+    throw new AppError('EMAIL_IN_USE', 'An account with this email already exists', 409);
+  }
+
+  if (config.inviteOnly.enabled) {
+    // Invitation-only mode: no existing row for this email at all means nobody invited them.
+    throw new AppError('INVITE_ONLY', 'This site is invitation-only — ask an admin for an invite', 403);
+  }
+
+  [user] = await db('users')
+    .insert({
+      email: params.email,
+      name: params.name || params.email,
+      avatar_url: params.avatarUrl,
+      oidc_provider: params.provider,
+      oidc_subject: params.subject
+    })
+    .returning('*');
+  return user;
 }
 
 export class AuthService {

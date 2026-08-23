@@ -80,6 +80,48 @@ export class EmailService {
     });
   }
 
+  /**
+   * Invitation-only mode's outbound notification (AdminService.inviteUser) — tells someone an
+   * admin created an account for them and links back to /login. Unlike `deliver`/`deliverForTopic`
+   * this has no `conversation_threads`/`topic_thread` row to hang a reply-to/thread-id off of (an
+   * invited user hasn't started onboarding yet), so it talks to Resend directly rather than going
+   * through the shared `send` helper above. Same disabled/no-op safe default as everything else
+   * in this file.
+   */
+  async sendInvite(email: string, customMessage?: string): Promise<void> {
+    const loginUrl = `${config.frontendUrl}/login`;
+    const body = [
+      "You've been invited to Unposer.",
+      customMessage ? `\n${customMessage}\n` : '',
+      `Sign in here to get started: ${loginUrl}`
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    if (!config.email.enabled) {
+      console.log(`[email.service] (disabled — no RESEND_API_KEY/RESEND_WEBHOOK_SECRET) would send invite to ${email}: ${body}`);
+      return;
+    }
+
+    try {
+      const { error } = await resend().emails.send({
+        from: config.email.fromAddress,
+        to: email,
+        subject: "You're invited to Unposer",
+        text: body
+      });
+
+      if (error) {
+        console.error(`[email.service] Resend invite send failed for ${email}:`, error);
+      }
+    } catch (err: any) {
+      // Best-effort — the invite row is already created regardless of whether the email lands;
+      // an admin can see the pending invite in the users list either way and re-send/tell the
+      // person directly if delivery failed.
+      console.error(`[email.service] unexpected error sending invite to ${email}:`, err.message || err);
+    }
+  }
+
   private async send(params: SendParams): Promise<void> {
     if (!config.email.enabled) {
       console.log(

@@ -17,12 +17,30 @@ router.get('/users', async (req: AuthRequest, res, next) => {
     const { q, role, status, limit, offset } = req.query;
     const result = await adminService.listUsers({
       q: typeof q === 'string' ? q : undefined,
-      role: role === 'user' || role === 'admin' ? role : undefined,
+      role: role === 'user' || role === 'admin' || role === 'invited' ? role : undefined,
       status: status === 'active' || status === 'suspended' ? status : undefined,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined
     });
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+const inviteSchema = z.object({
+  email: z.string().email(),
+  message: z.string().max(2000).optional()
+});
+
+// Creates a role='invited' placeholder row and emails the person a link to sign in — see
+// AdminService.inviteUser. Works regardless of config.inviteOnly (that flag only gates
+// self-registration); an admin can always invite someone. Declared ahead of GET/PATCH
+// /users/:id so "invite" is never captured as an :id.
+router.post('/users/invite', validate(inviteSchema), async (req: AuthRequest, res, next) => {
+  try {
+    const user = await adminService.inviteUser(req.body.email, req.userId!, req.body.message);
+    res.status(201).json({ user });
   } catch (error) {
     next(error);
   }
@@ -87,6 +105,17 @@ router.patch('/users/:id', validate(updateUserSchema), async (req: AuthRequest, 
     }
     const user = await adminService.updateUser(id, req.body);
     res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Revoke a pending invite — see AdminService.revokeInvite (400s if the target isn't actually
+// role 'invited', so this can never be used to delete a real account's data).
+router.delete('/users/:id/invite', async (req: AuthRequest, res, next) => {
+  try {
+    await adminService.revokeInvite(String(req.params.id));
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

@@ -8,7 +8,9 @@ import { AuthService } from '../../core/auth/auth.service';
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
   access_denied: 'Sign-in was cancelled.',
   oauth_state_mismatch: 'Your sign-in session expired — please try again.',
-  oauth_failed: 'Sign-in failed. Please try again.'
+  oauth_failed: 'Sign-in failed. Please try again.',
+  invite_only: "This site is invitation-only right now — you'll need an invite from an admin to sign in.",
+  email_in_use: 'An account with this email already exists on a different sign-in method.'
 };
 
 @Component({
@@ -26,6 +28,10 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 
       <form class="card panel" (ngSubmit)="onSubmit()">
         <span class="eyebrow">Sign in</span>
+
+        @if (inviteOnly()) {
+          <span class="stamp stamp-brick invite-only-badge">Invitation only</span>
+        }
 
         @if (error()) {
           <p class="error-line">{{ error() }}</p>
@@ -131,6 +137,10 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
           padding: 0 0.75em;
         }
       }
+
+      .invite-only-badge {
+        align-self: flex-start;
+      }
     `
     ]
 })
@@ -140,6 +150,7 @@ export class LoginComponent implements OnInit {
   loading = signal(false);
   error = signal('');
   providers = signal<string[]>([]);
+  inviteOnly = signal(false);
 
   constructor(private authService: AuthService, private router: Router, private route: ActivatedRoute) {}
 
@@ -150,7 +161,10 @@ export class LoginComponent implements OnInit {
     }
 
     this.authService.getProviders().subscribe({
-      next: (res) => this.providers.set(res.providers),
+      next: (res) => {
+        this.providers.set(res.providers);
+        this.inviteOnly.set(res.inviteOnly);
+      },
       error: () => {} // Google button just stays hidden — dev login still works either way.
     });
   }
