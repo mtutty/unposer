@@ -108,6 +108,10 @@ export async function structuredCall<T extends z.ZodTypeAny>(
       temperature
     );
   } catch (error: any) {
+    // getChatModel()'s own LLM_NOT_CONFIGURED (503) is thrown inside the withTemperatureFallback
+    // call above — pass an AppError through as-is rather than re-wrapping it into a generic 502,
+    // or that more specific code/status can never reach the caller (same fix as embeddings.ts).
+    if (error instanceof AppError) throw error;
     throw new AppError('LLM_ERROR', `AI request failed: ${error.message || 'unknown error'}`, 502);
   }
 }

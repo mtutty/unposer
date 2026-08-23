@@ -27,6 +27,10 @@ export async function embedText(text: string): Promise<number[]> {
   try {
     return await getEmbeddingsClient().embedQuery(text);
   } catch (error: any) {
+    // getEmbeddingsClient()'s own EMBEDDINGS_NOT_CONFIGURED (503) is thrown inside this same try
+    // block — pass an AppError through as-is rather than re-wrapping it into a generic 502, or
+    // that more specific code/status can never reach the caller.
+    if (error instanceof AppError) throw error;
     throw new AppError('EMBEDDINGS_ERROR', `Embedding request failed: ${error.message || 'unknown error'}`, 502);
   }
 }
@@ -35,6 +39,8 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
   try {
     return await getEmbeddingsClient().embedDocuments(texts);
   } catch (error: any) {
+    // See embedText above.
+    if (error instanceof AppError) throw error;
     throw new AppError('EMBEDDINGS_ERROR', `Embedding request failed: ${error.message || 'unknown error'}`, 502);
   }
 }

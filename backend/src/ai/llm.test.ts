@@ -19,8 +19,10 @@ jest.mock('@langchain/anthropic', () => ({
   ChatAnthropic: jest.fn().mockImplementation(() => mockModel)
 }));
 
-import { invokeWithTemperatureFallback, resolveToolCall } from './llm';
+import { z } from 'zod';
+import { invokeWithTemperatureFallback, resolveToolCall, structuredCall } from './llm';
 import { AppError } from '../types';
+import { config } from '../config';
 
 describe('invokeWithTemperatureFallback', () => {
   beforeEach(() => {
@@ -66,5 +68,34 @@ describe('resolveToolCall', () => {
 
     expect(result).toEqual({ content: '', tool_calls: [] });
     expect(mockModel.bindTools).toHaveBeenCalled();
+  });
+});
+
+describe('structuredCall', () => {
+  afterEach(() => {
+    (config as any).llm.apiKey = 'test-key';
+  });
+
+  // getChatModel()'s own AppError('LLM_NOT_CONFIGURED', ..., 503) is thrown inside
+  // withTemperatureFallback, itself inside structuredCall's try block — regression test for the
+  // bug where its catch-all used to re-wrap that as a generic LLM_ERROR/502, losing the more
+  // specific code/status every chain in ai/ relies on structuredCall for (see embeddings.test.ts
+  // for the equivalent case in embeddings.ts, which had the same bug).
+  it('passes an already-AppError failure (e.g. no LLM_API_KEY configured) through unwrapped', async () => {
+    (config as any).llm.apiKey = '';
+
+    await expect(structuredCall(z.object({ x: z.string() }), 'sys', 'human')).rejects.toMatchObject({
+      code: 'LLM_NOT_CONFIGURED',
+      status: 503
+    });
+  });
+
+  it('still wraps a genuine provider failure as LLM_ERROR/502', async () => {
+    mockModel.withStructuredOutput = jest.fn().mockReturnValue({ invoke: jest.fn().mockRejectedValue(new Error('boom')) });
+
+    await expect(structuredCall(z.object({ x: z.string() }), 'sys', 'human')).rejects.toMatchObject({
+      code: 'LLM_ERROR',
+      status: 502
+    });
   });
 });

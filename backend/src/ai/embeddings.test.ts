@@ -20,16 +20,12 @@ describe('embeddings', () => {
   });
 
   describe('embedText', () => {
-    // getEmbeddingsClient()'s own AppError('EMBEDDINGS_NOT_CONFIGURED', ..., 503) is thrown
-    // *inside* embedText's try block, so the catch below re-wraps it as EMBEDDINGS_ERROR/502 —
-    // the specific code/status never reaches the caller. Asserting the current (masked) behavior
-    // here, not the apparently-intended one; flagged separately rather than changed unasked.
-    it('surfaces the missing-key error as EMBEDDINGS_ERROR/502, not the more specific EMBEDDINGS_NOT_CONFIGURED/503', async () => {
+    it('throws EMBEDDINGS_NOT_CONFIGURED (503) when no api key is set, without constructing a client', async () => {
       mockConfig.embeddings.apiKey = '';
 
       await expect(embedText('hello')).rejects.toMatchObject({
-        code: 'EMBEDDINGS_ERROR',
-        status: 502
+        code: 'EMBEDDINGS_NOT_CONFIGURED',
+        status: 503
       });
       expect(MockOpenAIEmbeddings).not.toHaveBeenCalled();
     });
@@ -55,11 +51,10 @@ describe('embeddings', () => {
   });
 
   describe('embedTexts', () => {
-    // Same masking as embedText above.
-    it('surfaces the missing-key error as EMBEDDINGS_ERROR/502, not the more specific EMBEDDINGS_NOT_CONFIGURED/503', async () => {
+    it('throws EMBEDDINGS_NOT_CONFIGURED (503) when no api key is set', async () => {
       mockConfig.embeddings.apiKey = '';
 
-      await expect(embedTexts(['a', 'b'])).rejects.toMatchObject({ code: 'EMBEDDINGS_ERROR', status: 502 });
+      await expect(embedTexts(['a', 'b'])).rejects.toMatchObject({ code: 'EMBEDDINGS_NOT_CONFIGURED', status: 503 });
     });
 
     it('embeds a batch of strings via embedDocuments', async () => {
