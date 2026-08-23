@@ -18,7 +18,7 @@ router.get('/users', async (req: AuthRequest, res, next) => {
     const result = await adminService.listUsers({
       q: typeof q === 'string' ? q : undefined,
       role: role === 'user' || role === 'admin' || role === 'invited' ? role : undefined,
-      status: status === 'active' || status === 'suspended' ? status : undefined,
+      status: status === 'active' || status === 'suspended' || status === 'pending' ? status : undefined,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined
     });
@@ -87,7 +87,7 @@ router.post('/users/:id/reset', validate(resetSchema), async (req: AuthRequest, 
 const updateUserSchema = z
   .object({
     role: z.enum(['user', 'admin']).optional(),
-    status: z.enum(['active', 'suspended']).optional()
+    status: z.enum(['active', 'suspended', 'pending']).optional()
   })
   .refine((data) => data.role !== undefined || data.status !== undefined, {
     message: 'At least one of role or status must be provided'

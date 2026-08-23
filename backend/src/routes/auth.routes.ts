@@ -109,7 +109,10 @@ function registerOidcRoutes(
       console.log(`[auth.routes] ${provider} sign-in: ${user.email}`);
       // Admins land straight on the admin console — they have no candidate dashboard/profile of
       // their own (see authGuard on the frontend, which also bounces a direct /dashboard hit).
-      redirectTo(user.role === 'admin' ? '/admin/users' : '/dashboard');
+      // A freshly-created 'pending' account (invite-only self-registration — see upsertOidcUser)
+      // goes to the waiting page instead; pendingGuard/authGuard would bounce it there anyway,
+      // this just skips the extra round trip.
+      redirectTo(user.status === 'pending' ? '/pending' : user.role === 'admin' ? '/admin/users' : '/dashboard');
     } catch (error: any) {
       console.error(`[auth.routes] ${provider} sign-in failed:`, error.message || error);
       // INVITE_ONLY (no invite on file, invite-only mode on) and EMAIL_IN_USE (email already
@@ -159,6 +162,27 @@ router.get('/me', async (req, res, next) => {
 
     const user = await authService.getCurrentUser(token);
     res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Self-delete — deliberately doesn't go through requireAuth (a 'pending' account is exactly who
+// needs this, and requireAuth would 403 it) — just needs a valid session, checked directly the
+// same way GET /me does.
+router.delete('/me', async (req, res, next) => {
+  try {
+    const token = req.cookies.session_token;
+    if (!token) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    const user = await authService.getCurrentUser(token);
+    if (!user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    await authService.deleteOwnAccount(user.id);
+    res.clearCookie('session_token');
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

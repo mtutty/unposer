@@ -1,7 +1,9 @@
 // 'invited' = an admin-created placeholder that hasn't signed in yet (see Invitation-only mode
 // in CLAUDE.md); it flips to 'user' automatically on first login.
 export type UserRole = 'user' | 'admin' | 'invited';
-export type UserStatus = 'active' | 'suspended';
+// 'pending' = self-registered while invite-only mode was on — awaiting an admin's approval (see
+// pendingGuard / PendingApprovalComponent).
+export type UserStatus = 'active' | 'suspended' | 'pending';
 
 export interface User {
   id: string;

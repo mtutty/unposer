@@ -9,15 +9,20 @@ import { ProfileReviewStepComponent } from './features/onboarding/profile/profil
 import { SandboxStepComponent } from './features/onboarding/sandbox/sandbox.component';
 import { ShareStepComponent } from './features/onboarding/share/share.component';
 import { PublicShareComponent } from './features/public-share/public-share.component';
-import { SplashComponent } from './features/splash/splash.component';
 import { AdminUsersComponent } from './features/admin/admin-users.component';
 import { AdminUserDetailComponent } from './features/admin/admin-user-detail.component';
 import { ScheduleSettingsComponent } from './features/schedule/schedule-settings.component';
-import { authGuard, guestGuard, adminGuard } from './core/auth/auth.guard';
+import { HowItWorksComponent } from './features/how-it-works/how-it-works.component';
+import { PendingApprovalComponent } from './features/pending/pending-approval.component';
+import { authGuard, guestGuard, adminGuard, pendingGuard } from './core/auth/auth.guard';
 
 export const routes: Routes = [
-  { path: '', component: SplashComponent, canActivate: [guestGuard] },
-  { path: 'login', component: LoginComponent },
+  // The login page doubles as the marketing splash now (see login.component.ts) — `/` just
+  // redirects there rather than rendering a separate page.
+  { path: '', redirectTo: '/login', pathMatch: 'full' },
+  { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
+  { path: 'how-it-works', component: HowItWorksComponent },
+  { path: 'pending', component: PendingApprovalComponent, canActivate: [pendingGuard] },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'admin/users', component: AdminUsersComponent, canActivate: [adminGuard] },
   { path: 'admin/users/:id', component: AdminUserDetailComponent, canActivate: [adminGuard] },

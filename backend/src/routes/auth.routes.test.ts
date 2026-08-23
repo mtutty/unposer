@@ -178,6 +178,20 @@ describe('auth.routes', () => {
       expect(res.headers.location).toBe('http://localhost:4200/admin/users');
     });
 
+    it('redirects a pending account (invite-only self-registration) to /pending instead of /dashboard', async () => {
+      mockAuthService.googleLogin.mockResolvedValue({
+        token: 'tok-999',
+        user: { id: 'u4', email: 'newcomer@example.com', role: 'user', status: 'pending' } as any
+      });
+
+      const res = await request(app)
+        .get('/google/callback')
+        .query({ state: 'abc', code: 'authcode' })
+        .set('Cookie', 'oauth_state=abc');
+
+      expect(res.headers.location).toBe('http://localhost:4200/pending');
+    });
+
     it('redirects to /login?error=oauth_failed when the token exchange throws', async () => {
       mockAuthService.googleLogin.mockRejectedValue(new Error('token exchange failed'));
 
@@ -248,6 +262,35 @@ describe('auth.routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.user.email).toBe('dev@example.com');
       expect(mockAuthService.getCurrentUser).toHaveBeenCalledWith('tok-123');
+    });
+  });
+
+  describe('DELETE /me', () => {
+    it('401s with no session_token cookie, without calling the service', async () => {
+      const res = await request(app).delete('/me');
+
+      expect(res.status).toBe(401);
+      expect(mockAuthService.deleteOwnAccount).not.toHaveBeenCalled();
+    });
+
+    it('401s when the session_token does not resolve to a user', async () => {
+      mockAuthService.getCurrentUser.mockResolvedValue(null);
+
+      const res = await request(app).delete('/me').set('Cookie', 'session_token=tok-123');
+
+      expect(res.status).toBe(401);
+      expect(mockAuthService.deleteOwnAccount).not.toHaveBeenCalled();
+    });
+
+    it('deletes the account and clears the session cookie for a valid session_token', async () => {
+      mockAuthService.getCurrentUser.mockResolvedValue({ id: 'u1', email: 'pending@example.com' } as any);
+
+      const res = await request(app).delete('/me').set('Cookie', 'session_token=tok-123');
+
+      expect(res.status).toBe(204);
+      expect(mockAuthService.deleteOwnAccount).toHaveBeenCalledWith('u1');
+      const cookies = res.headers['set-cookie'] as unknown as string[];
+      expect(cookies.some((c) => c.startsWith('session_token=;'))).toBe(true);
     });
   });
 });

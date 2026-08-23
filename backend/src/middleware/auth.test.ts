@@ -82,6 +82,22 @@ describe('requireAuth', () => {
     expect(err.status).toBe(403);
   });
 
+  it('rejects with 403 ACCOUNT_PENDING for a pending user, even with a valid session', async () => {
+    dbMock.mockImplementation((table: string) => {
+      if (table === 'sessions') return makeBuilder({ user_id: 'u1' });
+      if (table === 'users') return makeBuilder({ id: 'u1', status: 'pending' });
+      throw new Error(`unexpected table: ${table}`);
+    });
+    const req = { cookies: { session_token: 'tok-1' } } as unknown as AuthRequest;
+    const next = mockNext();
+
+    await requireAuth(req, {} as Response, next);
+
+    const err = (next as jest.Mock).mock.calls[0][0];
+    expect(err.code).toBe('ACCOUNT_PENDING');
+    expect(err.status).toBe(403);
+  });
+
   it('populates req.userId/req.user and calls next() with no error for a valid, active session', async () => {
     const user = { id: 'u1', email: 'a@b.com', status: 'active', role: 'user' };
     dbMock.mockImplementation((table: string) => {

@@ -2,21 +2,25 @@ import { Component, OnInit, signal, ChangeDetectionStrategy } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
+import { PublicNavComponent } from '../../shared/components/public-nav/public-nav.component';
 
 // Friendly text for the ?error= codes auth.routes.ts's /<provider>/callback routes redirect
-// back with — same codes regardless of which provider (see registerOidcRoutes there).
+// back with — same codes regardless of which provider (see registerOidcRoutes there). No
+// 'invite_only' entry any more: invite-only mode no longer rejects a new sign-in (see
+// upsertOidcUser in auth.service.ts) — it creates a 'pending' account instead, so that code path
+// is no longer reachable.
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
   access_denied: 'Sign-in was cancelled.',
   oauth_state_mismatch: 'Your sign-in session expired — please try again.',
   oauth_failed: 'Sign-in failed. Please try again.',
-  invite_only: "This site is invitation-only right now — you'll need an invite from an admin to sign in.",
   email_in_use: 'An account with this email already exists on a different sign-in method.'
 };
 
 @Component({
     selector: 'app-login',
-    imports: [FormsModule],
+    imports: [FormsModule, PublicNavComponent],
     template: `
+    <app-public-nav />
     <div class="screen">
       <div class="pitch">
         <span class="stamp stamp-brass">v1 prototype</span>
@@ -48,10 +52,6 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 
       <form class="card panel" (ngSubmit)="onSubmit()">
         <span class="eyebrow">Sign in</span>
-
-        @if (inviteOnly()) {
-          <span class="stamp stamp-brick invite-only-badge">Invitation only</span>
-        }
 
         @if (error()) {
           <p class="error-line">{{ error() }}</p>
@@ -197,9 +197,6 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
         }
       }
 
-      .invite-only-badge {
-        align-self: flex-start;
-      }
     `
     ]
 })
@@ -209,7 +206,6 @@ export class LoginComponent implements OnInit {
   loading = signal(false);
   error = signal('');
   providers = signal<string[]>([]);
-  inviteOnly = signal(false);
 
   constructor(private authService: AuthService, private router: Router, private route: ActivatedRoute) {}
 
@@ -220,10 +216,7 @@ export class LoginComponent implements OnInit {
     }
 
     this.authService.getProviders().subscribe({
-      next: (res) => {
-        this.providers.set(res.providers);
-        this.inviteOnly.set(res.inviteOnly);
-      },
+      next: (res) => this.providers.set(res.providers),
       error: () => {} // Google button just stays hidden — dev login still works either way.
     });
   }
@@ -233,7 +226,7 @@ export class LoginComponent implements OnInit {
     this.error.set('');
 
     this.authService.devLogin(this.username, this.password).subscribe({
-      next: ({ user }) => this.router.navigate([user.role === 'admin' ? '/admin/users' : '/dashboard']),
+      next: ({ user }) => this.router.navigate([user.status === 'pending' ? '/pending' : user.role === 'admin' ? '/admin/users' : '/dashboard']),
       error: (err) => {
         this.error.set(err.error?.error?.message || 'Sign-in failed');
         this.loading.set(false);

@@ -6,7 +6,11 @@
 // has ever signed in — see the migration that added it. It flips to 'user' automatically on
 // their first real OIDC login (AuthService's upsert flow) and is never set any other way.
 export type UserRole = 'user' | 'admin' | 'invited';
-export type UserStatus = 'active' | 'suspended';
+// 'pending' = a self-registered account created while invite-only mode was on (see
+// upsertOidcUser in auth.service.ts) — awaiting an admin flipping it to 'active'. requireAuth
+// blocks it from every candidate-flow route the same way it blocks 'suspended'; the frontend
+// routes a pending user to a waiting page instead (see pendingGuard).
+export type UserStatus = 'active' | 'suspended' | 'pending';
 
 export interface User {
   id: string;

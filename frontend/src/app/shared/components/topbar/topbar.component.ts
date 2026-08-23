@@ -14,13 +14,23 @@ import { AuthService } from '../../../core/auth/auth.service';
       </a>
       @if (auth.currentUser(); as user) {
         <div class="user">
+          <span class="identity">
+            @if (user.avatar_url) {
+              <img class="avatar" [src]="user.avatar_url" [alt]="user.name" />
+            } @else {
+              <svg class="avatar avatar-glyph" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="8" r="4" fill="currentColor" />
+                <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="currentColor" />
+              </svg>
+            }
+            <span class="meta">{{ user.name }}</span>
+          </span>
+          <button class="btn btn-ghost" (click)="logout()">Log out</button>
           @if (user.role === 'admin') {
             <a routerLink="/admin/users" class="btn btn-ghost">Admin</a>
           } @else {
             <a routerLink="/settings/schedule" class="btn btn-ghost">Check-in settings</a>
           }
-          <span class="meta">{{ user.name }}</span>
-          <button class="btn btn-ghost" (click)="logout()">Sign out</button>
         </div>
       }
     </header>
@@ -55,6 +65,27 @@ import { AuthService } from '../../../core/auth/auth.service';
         display: flex;
         align-items: center;
         gap: 0.9em;
+      }
+
+      .identity {
+        display: flex;
+        align-items: center;
+        gap: 0.5em;
+      }
+
+      .avatar {
+        width: 1.6em;
+        height: 1.6em;
+        border-radius: 50%;
+        object-fit: cover;
+        flex-shrink: 0;
+      }
+
+      .avatar-glyph {
+        color: var(--paper-text-soft);
+        background: var(--cover-3);
+        padding: 0.15em;
+        box-sizing: border-box;
       }
 
       .user .meta {

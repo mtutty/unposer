@@ -70,6 +70,7 @@ interface UserRow {
           <select id="status" [(ngModel)]="statusFilter" (ngModelChange)="reload()">
             <option [ngValue]="undefined">Any</option>
             <option value="active">active</option>
+            <option value="pending">pending</option>
             <option value="suspended">suspended</option>
           </select>
         </div>
@@ -119,6 +120,7 @@ interface UserRow {
                 <td>
                   <select [(ngModel)]="row.status">
                     <option value="active">active</option>
+                    <option value="pending">pending</option>
                     <option value="suspended">suspended</option>
                   </select>
                 </td>

@@ -42,4 +42,15 @@ export class AuthService {
   getProviders(): Observable<{ providers: string[]; inviteOnly: boolean }> {
     return this.api.get<{ providers: string[]; inviteOnly: boolean }>('/auth/providers');
   }
+
+  /** Self-service cancel, offered from the "pending approval" waiting page — see
+   *  PendingApprovalComponent and DELETE /api/auth/me. */
+  deleteAccount(): Observable<void> {
+    return this.api.delete<void>('/auth/me').pipe(
+      tap(() => {
+        this.currentUser.set(null);
+        this.isAuthenticated.set(false);
+      })
+    );
+  }
 }

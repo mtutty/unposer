@@ -91,12 +91,17 @@ describe('AuthService (upsertOidcUser via githubLogin)', () => {
     expect(user.email).toBe('octo@example.com');
   });
 
-  it('rejects a brand-new email when invite-only mode is on', async () => {
+  it('creates a pending account (rather than rejecting) for a brand-new email when invite-only mode is on', async () => {
     mockConfig.inviteOnly.enabled = true;
     usersBuilder.first.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+    usersBuilder.returning.mockResolvedValueOnce([{ id: 'u2', role: 'user', status: 'pending', email: 'octo@example.com' }]);
 
-    await expect(service.githubLogin('code')).rejects.toMatchObject({ code: 'INVITE_ONLY' });
-    expect(usersBuilder.insert).not.toHaveBeenCalled();
+    const { user } = await service.githubLogin('code');
+
+    expect(usersBuilder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'octo@example.com', status: 'pending' })
+    );
+    expect(user.status).toBe('pending');
   });
 
   it('claims a pending invite (role invited) by email, flipping it to role user regardless of invite-only mode', async () => {

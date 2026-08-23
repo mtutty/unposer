@@ -107,10 +107,12 @@ async function upsertOidcUser(params: {
     throw new AppError('EMAIL_IN_USE', 'An account with this email already exists', 409);
   }
 
-  if (config.inviteOnly.enabled) {
-    // Invitation-only mode: no existing row for this email at all means nobody invited them.
-    throw new AppError('INVITE_ONLY', 'This site is invitation-only — ask an admin for an invite', 403);
-  }
+  // Invitation-only mode: no existing row for this email at all means nobody invited them. Still
+  // create the account rather than rejecting the login outright — just parked as 'pending' until
+  // an admin approves it (flips status back to 'active' via the admin Users page). The frontend
+  // routes a signed-in 'pending' user to a waiting page (see pendingGuard); requireAuth blocks
+  // every candidate-flow route for them in the meantime the same way it blocks 'suspended'.
+  const status = config.inviteOnly.enabled ? 'pending' : 'active';
 
   [user] = await db('users')
     .insert({
@@ -118,7 +120,8 @@ async function upsertOidcUser(params: {
       name: params.name || params.email,
       avatar_url: params.avatarUrl,
       oidc_provider: params.provider,
-      oidc_subject: params.subject
+      oidc_subject: params.subject,
+      status
     })
     .returning('*');
   return user;
@@ -318,5 +321,13 @@ export class AuthService {
 
   async logout(token: string): Promise<void> {
     await db('sessions').where({ token }).delete();
+  }
+
+  /** Self-service account deletion — currently only exposed to a signed-in user from the
+   *  "pending approval" waiting page (see PendingApprovalComponent / DELETE /api/auth/me), so
+   *  they can back out of an invite-only signup without waiting on an admin. Sessions cascade-
+   *  delete with the user row (see the sessions migration's onDelete('CASCADE')). */
+  async deleteOwnAccount(userId: string): Promise<void> {
+    await db('users').where({ id: userId }).delete();
   }
 }

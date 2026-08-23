@@ -42,6 +42,14 @@ export async function requireAuth(
       throw new AppError('ACCOUNT_SUSPENDED', 'This account has been suspended', 403);
     }
 
+    // A pending (invite-only self-registration awaiting approval) account is likewise blocked
+    // from every candidate-flow route. GET /auth/me, POST /auth/logout, and DELETE /auth/me
+    // (self-delete) deliberately don't go through requireAuth, so a pending user can still see
+    // their own status and log out or cancel the account from the waiting page.
+    if (user.status === 'pending') {
+      throw new AppError('ACCOUNT_PENDING', 'This account is awaiting admin approval', 403);
+    }
+
     req.userId = user.id;
     req.user = user;
     next();
