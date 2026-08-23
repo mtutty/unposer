@@ -40,6 +40,32 @@ router.get('/users/:id', async (req: AuthRequest, res, next) => {
   }
 });
 
+// Read-only rollup of everything the candidate has accumulated — resume, logistics, both
+// conversation transcripts, profile, sandbox history, share links. See AdminService.getUserDetail.
+router.get('/users/:id/detail', async (req: AuthRequest, res, next) => {
+  try {
+    const detail = await adminService.getUserDetail(String(req.params.id));
+    res.json(detail);
+  } catch (error) {
+    next(error);
+  }
+});
+
+const resetSchema = z.object({ confirmEmail: z.string().min(1) });
+
+// Irreversible — wipes the target's resume/logistics/conversations/profile/sandbox/share data
+// back to a blank slate (same wipe as the candidate's own POST /api/flow/reset). Gated on the
+// caller echoing the target's email back; see AdminService.resetUserData for the rest of the
+// guardrails (blocked on admin targets, 404 on a missing user).
+router.post('/users/:id/reset', validate(resetSchema), async (req: AuthRequest, res, next) => {
+  try {
+    const user = await adminService.resetUserData(String(req.params.id), req.body.confirmEmail);
+    res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+});
+
 const updateUserSchema = z
   .object({
     role: z.enum(['user', 'admin']).optional(),

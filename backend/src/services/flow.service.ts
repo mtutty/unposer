@@ -99,6 +99,17 @@ export class FlowService {
       await trx('candidate_profiles').where({ user_id: userId }).delete();
       await trx('sandbox_messages').where({ user_id: userId }).delete();
       await trx('share_links').where({ user_id: userId }).delete();
+      // pgvector-backed semantic-search tiers (see CLAUDE.md's AI Integration section) — each
+      // independently keyed by user_id like dimension_score/insight above, not cascaded from any
+      // table already cleared, so a reset would otherwise leave stale embeddings answerable by
+      // the sandbox's search_candidate_evidence tool for a candidate with a wiped profile.
+      await trx('profile_evidence').where({ user_id: userId }).delete();
+      await trx('conversation_evidence').where({ user_id: userId }).delete();
+      // Culture signal (spec §7) — same orphan risk as dimension_score et al. above; not cleared
+      // by any cascade. rag_audit_log is deliberately NOT cleared here — it's a bias-control audit
+      // trail (spec §8) meant to persist independent of the candidate's own data, see its
+      // migration comment.
+      await trx('culture_signal').where({ user_id: userId }).delete();
     });
   }
 }

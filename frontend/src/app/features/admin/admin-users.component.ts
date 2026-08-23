@@ -1,6 +1,7 @@
 import { Component, OnInit, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { TopbarComponent } from '../../shared/components/topbar/topbar.component';
 import { AdminService } from '../../core/admin/admin.service';
 import { User, UserRole, UserStatus } from '../../models/user.model';
@@ -22,7 +23,7 @@ interface UserRow {
  */
 @Component({
   selector: 'app-admin-users',
-  imports: [TopbarComponent, FormsModule, DatePipe],
+  imports: [TopbarComponent, FormsModule, DatePipe, RouterLink],
   template: `
     <app-topbar />
 
@@ -87,6 +88,7 @@ interface UserRow {
               </td>
               <td>{{ row.user.last_login_at ? (row.user.last_login_at | date: 'medium') : 'never' }}</td>
               <td>
+                <a class="btn btn-secondary" [routerLink]="['/admin/users', row.user.id]">View</a>
                 <button
                   class="btn btn-secondary"
                   [disabled]="row.saving || (row.role === row.user.role && row.status === row.user.status)"
@@ -142,6 +144,12 @@ interface UserRow {
       .error {
         color: var(--brick-strong, #a33);
       }
+
+      .user-table td:last-child {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
     `
   ]
 })
@@ -189,7 +197,7 @@ export class AdminUsersComponent implements OnInit {
       },
       error: (err) => {
         row.saving = false;
-        row.error = err?.error?.message || 'Save failed.';
+        row.error = err?.error?.error?.message || 'Save failed.';
       }
     });
   }

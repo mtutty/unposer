@@ -1,6 +1,14 @@
 jest.mock('../db/connection', () => ({ db: jest.fn() }));
 import { db } from '../db/connection';
 import { AdminService } from './admin.service';
+import { FlowService } from './flow.service';
+import { ResumeService } from './resume.service';
+import { LogisticsService } from './logistics.service';
+import { ConversationService } from './conversation.service';
+import { TopicConversationService } from './topic-conversation.service';
+import { SandboxService } from './sandbox.service';
+import { ShareService } from './share.service';
+import { ProfileService } from './profile.service';
 
 function makeBuilder() {
   const builder: any = {};
@@ -98,6 +106,72 @@ describe('AdminService', () => {
       builder.returning.mockResolvedValueOnce([]);
 
       await expect(service.updateUser('missing', { status: 'suspended' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+  });
+
+  describe('getUserDetail', () => {
+    it('throws NOT_FOUND when the user does not exist', async () => {
+      builder.first.mockResolvedValueOnce(undefined);
+
+      await expect(service.getUserDetail('missing')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('aggregates every accumulated-data source for the user', async () => {
+      builder.first
+        .mockResolvedValueOnce({ id: 'u1', email: 'a@b.com', role: 'user' }) // getUser
+        .mockResolvedValueOnce({ id: 'fp1', current_step: 'resume' }); // flow_progress
+
+      jest.spyOn(ResumeService.prototype, 'getResume').mockResolvedValueOnce({ id: 'r1' } as any);
+      jest.spyOn(LogisticsService.prototype, 'getResponse').mockResolvedValueOnce({ id: 'l1' } as any);
+      jest.spyOn(ConversationService.prototype, 'getHistory').mockResolvedValueOnce([{ id: 'm1' }] as any);
+      jest.spyOn(TopicConversationService.prototype, 'getFullTranscript').mockResolvedValueOnce([{ id: 'm2' }] as any);
+      jest.spyOn(ProfileService.prototype, 'getProfile').mockResolvedValueOnce({ id: 'p1' } as any);
+      jest.spyOn(SandboxService.prototype, 'getHistory').mockResolvedValueOnce([{ id: 's1' }] as any);
+      jest.spyOn(ShareService.prototype, 'listLinks').mockResolvedValueOnce([{ id: 'sl1' }] as any);
+
+      const result = await service.getUserDetail('u1');
+
+      expect(result).toEqual({
+        user: { id: 'u1', email: 'a@b.com', role: 'user' },
+        flowProgress: { id: 'fp1', current_step: 'resume' },
+        resume: { id: 'r1' },
+        logisticsResponse: { id: 'l1' },
+        logisticsConversation: [{ id: 'm1' }],
+        deepPromptsTranscript: [{ id: 'm2' }],
+        profile: { id: 'p1' },
+        sandboxHistory: [{ id: 's1' }],
+        shareLinks: [{ id: 'sl1' }]
+      });
+    });
+  });
+
+  describe('resetUserData', () => {
+    it('throws NOT_FOUND when the user does not exist', async () => {
+      builder.first.mockResolvedValueOnce(undefined);
+
+      await expect(service.resetUserData('missing', 'a@b.com')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('refuses to reset an admin account', async () => {
+      builder.first.mockResolvedValueOnce({ id: 'u1', email: 'a@b.com', role: 'admin' });
+
+      await expect(service.resetUserData('u1', 'a@b.com')).rejects.toMatchObject({ code: 'CANNOT_RESET_ADMIN' });
+    });
+
+    it('refuses when the confirmation email does not match', async () => {
+      builder.first.mockResolvedValueOnce({ id: 'u1', email: 'a@b.com', role: 'user' });
+
+      await expect(service.resetUserData('u1', 'wrong@b.com')).rejects.toMatchObject({ code: 'CONFIRMATION_MISMATCH' });
+    });
+
+    it('wipes the candidate data and returns the user on a matching confirmation', async () => {
+      builder.first.mockResolvedValueOnce({ id: 'u1', email: 'a@b.com', role: 'user' });
+      const resetSpy = jest.spyOn(FlowService.prototype, 'resetProgress').mockResolvedValueOnce();
+
+      const result = await service.resetUserData('u1', 'a@b.com');
+
+      expect(resetSpy).toHaveBeenCalledWith('u1');
+      expect(result).toEqual({ id: 'u1', email: 'a@b.com', role: 'user' });
     });
   });
 });

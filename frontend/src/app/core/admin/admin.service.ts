@@ -2,6 +2,11 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from '../api/api.service';
 import { User, UserRole, UserStatus } from '../../models/user.model';
+import { FlowProgress } from '../../models/flow.model';
+import { Resume } from '../../models/resume.model';
+import { LogisticsResponse, Message } from '../../models/conversation.model';
+import { CandidateProfile } from '../../models/profile.model';
+import { SandboxMessage, ShareLink } from '../../models/sandbox.model';
 
 export interface UserListFilters {
   q?: string;
@@ -14,6 +19,19 @@ export interface UserListFilters {
 export interface UserListResult {
   users: User[];
   total: number;
+}
+
+/** Mirrors backend AdminService.getUserDetail's AdminUserDetail — see admin.routes.ts. */
+export interface AdminUserDetail {
+  user: User;
+  flowProgress: FlowProgress | null;
+  resume: Resume | null;
+  logisticsResponse: LogisticsResponse | null;
+  logisticsConversation: Message[];
+  deepPromptsTranscript: Message[];
+  profile: CandidateProfile | null;
+  sandboxHistory: SandboxMessage[];
+  shareLinks: ShareLink[];
 }
 
 /** Admin/user-management API (backend/src/routes/admin.routes.ts) — every call requires the
@@ -38,5 +56,15 @@ export class AdminService {
 
   updateUser(id: string, changes: { role?: UserRole; status?: UserStatus }): Observable<{ user: User }> {
     return this.api.patch<{ user: User }>(`/admin/users/${id}`, changes);
+  }
+
+  getUserDetail(id: string): Observable<AdminUserDetail> {
+    return this.api.get<AdminUserDetail>(`/admin/users/${id}/detail`);
+  }
+
+  /** `confirmEmail` must match the target user's email exactly — enforced server-side too
+   *  (AdminService.resetUserData), this isn't just a client-side confirmation dialog. */
+  resetUserData(id: string, confirmEmail: string): Observable<{ user: User }> {
+    return this.api.post<{ user: User }>(`/admin/users/${id}/reset`, { confirmEmail });
   }
 }

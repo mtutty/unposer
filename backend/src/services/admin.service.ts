@@ -1,5 +1,25 @@
 import { db } from '../db/connection';
-import { AppError, User, UserRole, UserStatus } from '../types';
+import {
+  AppError,
+  CandidateProfile,
+  FlowProgress,
+  LogisticsResponse,
+  Message,
+  Resume,
+  SandboxMessage,
+  ShareLink,
+  User,
+  UserRole,
+  UserStatus
+} from '../types';
+import { FlowService } from './flow.service';
+import { ResumeService } from './resume.service';
+import { LogisticsService } from './logistics.service';
+import { ConversationService } from './conversation.service';
+import { TopicConversationService } from './topic-conversation.service';
+import { SandboxService } from './sandbox.service';
+import { ShareService } from './share.service';
+import { ProfileService } from './profile.service';
 
 // Admin/user-management foundation (see the migration's header comment for why this exists as
 // part of Iteration 4 — prerequisite infrastructure for the personality engine's calibration
@@ -21,7 +41,33 @@ export interface UserListResult {
 
 const DEFAULT_LIMIT = 50;
 
+// A candidate's full accumulated onboarding record, as far as it's got — every field is null/
+// empty rather than absent when a step hasn't been reached yet, so the admin detail view can
+// render "not started" instead of special-casing missing keys. Deliberately assembled by calling
+// straight into each step's own service (same read methods their own routes use, see
+// routes/*.routes.ts) rather than duplicating any query here.
+export interface AdminUserDetail {
+  user: User;
+  flowProgress: FlowProgress | null;
+  resume: Resume | null;
+  logisticsResponse: LogisticsResponse | null;
+  logisticsConversation: Message[];
+  deepPromptsTranscript: Message[];
+  profile: CandidateProfile | null;
+  sandboxHistory: SandboxMessage[];
+  shareLinks: ShareLink[];
+}
+
 export class AdminService {
+  private flow = new FlowService();
+  private resume = new ResumeService();
+  private logistics = new LogisticsService();
+  private conversation = new ConversationService();
+  private topicConversation = new TopicConversationService();
+  private sandbox = new SandboxService();
+  private share = new ShareService();
+  private profile = new ProfileService();
+
   async listUsers(filters: UserListFilters = {}): Promise<UserListResult> {
     const limit = filters.limit ?? DEFAULT_LIMIT;
     const offset = filters.offset ?? 0;
@@ -47,6 +93,74 @@ export class AdminService {
 
   async getUser(id: string): Promise<User | undefined> {
     return db('users').where({ id }).first();
+  }
+
+  /** Everything a candidate has accumulated so far, for the admin "browse a user" screen. An
+   *  admin account (never runs the candidate flow — see authGuard on the frontend) just comes
+   *  back with every field empty; that's a legitimate state here, not an error. */
+  async getUserDetail(id: string): Promise<AdminUserDetail> {
+    const user = await this.getUser(id);
+    if (!user) {
+      throw new AppError('NOT_FOUND', 'User not found', 404);
+    }
+
+    const [
+      flowProgress,
+      resume,
+      logisticsResponse,
+      logisticsConversation,
+      deepPromptsTranscript,
+      profile,
+      sandboxHistory,
+      shareLinks
+    ] = await Promise.all([
+      db('flow_progress').where({ user_id: id }).first(),
+      this.resume.getResume(id),
+      this.logistics.getResponse(id),
+      this.conversation.getHistory(id, 'logistics'),
+      this.topicConversation.getFullTranscript(id),
+      this.profile.getProfile(id),
+      this.sandbox.getHistory(id),
+      this.share.listLinks(id)
+    ]);
+
+    return {
+      user,
+      flowProgress: flowProgress ?? null,
+      resume,
+      logisticsResponse,
+      logisticsConversation,
+      deepPromptsTranscript,
+      profile,
+      sandboxHistory,
+      shareLinks
+    };
+  }
+
+  /**
+   * Wipes everything a candidate has accumulated (delegates to FlowService.resetProgress — the
+   * same wipe a candidate can already trigger on their own account via POST /api/flow/reset), but
+   * gated on two things a self-serve reset doesn't need: the target must actually be a candidate
+   * (an admin account has no onboarding data to wipe, and "reset" reads as a no-op-but-scary
+   * action on one otherwise), and the caller must echo the target's email back — the same
+   * type-to-confirm shape as most irreversible admin actions elsewhere, enforced server-side so a
+   * client-only confirm() dialog isn't the only thing standing between an admin and an accidental
+   * click.
+   */
+  async resetUserData(id: string, confirmEmail: string): Promise<User> {
+    const user = await this.getUser(id);
+    if (!user) {
+      throw new AppError('NOT_FOUND', 'User not found', 404);
+    }
+    if (user.role === 'admin') {
+      throw new AppError('CANNOT_RESET_ADMIN', 'Admin accounts have no candidate data to reset', 400);
+    }
+    if (confirmEmail !== user.email) {
+      throw new AppError('CONFIRMATION_MISMATCH', "Typed email doesn't match this user's email", 400);
+    }
+
+    await this.flow.resetProgress(id);
+    return user;
   }
 
   async updateUser(id: string, changes: { role?: UserRole; status?: UserStatus }): Promise<User> {

@@ -11,6 +11,7 @@ import { ShareStepComponent } from './features/onboarding/share/share.component'
 import { PublicShareComponent } from './features/public-share/public-share.component';
 import { SplashComponent } from './features/splash/splash.component';
 import { AdminUsersComponent } from './features/admin/admin-users.component';
+import { AdminUserDetailComponent } from './features/admin/admin-user-detail.component';
 import { ScheduleSettingsComponent } from './features/schedule/schedule-settings.component';
 import { authGuard, guestGuard, adminGuard } from './core/auth/auth.guard';
 
@@ -19,6 +20,7 @@ export const routes: Routes = [
   { path: 'login', component: LoginComponent },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'admin/users', component: AdminUsersComponent, canActivate: [adminGuard] },
+  { path: 'admin/users/:id', component: AdminUserDetailComponent, canActivate: [adminGuard] },
   { path: 'settings/schedule', component: ScheduleSettingsComponent, canActivate: [authGuard] },
   {
     path: 'onboarding',
