@@ -24,7 +24,7 @@ docker-compose up -d              # Start all services (migrations run automatic
 # Access
 # Application: http://localhost (via nginx)
 # Dev mode also exposes: :4200 (frontend), :3000 (api), :5432 (db)
-# Dev login: devuser/devpass
+# Dev login: devuser/devpass (role: user), devadmin/devadminpass (role: admin)
 
 # Common operations
 docker-compose logs -f api        # View API logs

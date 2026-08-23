@@ -104,7 +104,9 @@ function registerOidcRoutes(
       });
 
       console.log(`[auth.routes] ${provider} sign-in: ${user.email}`);
-      redirectTo('/dashboard');
+      // Admins land straight on the admin console — they have no candidate dashboard/profile of
+      // their own (see authGuard on the frontend, which also bounces a direct /dashboard hit).
+      redirectTo(user.role === 'admin' ? '/admin/users' : '/dashboard');
     } catch (error: any) {
       console.error(`[auth.routes] ${provider} sign-in failed:`, error.message || error);
       redirectTo('/login?error=oauth_failed');

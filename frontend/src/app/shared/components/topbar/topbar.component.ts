@@ -8,7 +8,7 @@ import { AuthService } from '../../../core/auth/auth.service';
     imports: [RouterLink],
     template: `
     <header class="topbar">
-      <a routerLink="/dashboard" class="brand font-display">
+      <a [routerLink]="auth.currentUser()?.role === 'admin' ? '/admin/users' : '/dashboard'" class="brand font-display">
         <span class="brand-mark" aria-hidden="true">✦</span>
         Unposer
       </a>
@@ -16,8 +16,9 @@ import { AuthService } from '../../../core/auth/auth.service';
         <div class="user">
           @if (user.role === 'admin') {
             <a routerLink="/admin/users" class="btn btn-ghost">Admin</a>
+          } @else {
+            <a routerLink="/settings/schedule" class="btn btn-ghost">Check-in settings</a>
           }
-          <a routerLink="/settings/schedule" class="btn btn-ghost">Check-in settings</a>
           <span class="meta">{{ user.name }}</span>
           <button class="btn btn-ghost" (click)="logout()">Sign out</button>
         </div>

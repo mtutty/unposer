@@ -160,7 +160,7 @@ export class LoginComponent implements OnInit {
     this.error.set('');
 
     this.authService.devLogin(this.username, this.password).subscribe({
-      next: () => this.router.navigate(['/dashboard']),
+      next: ({ user }) => this.router.navigate([user.role === 'admin' ? '/admin/users' : '/dashboard']),
       error: (err) => {
         this.error.set(err.error?.error?.message || 'Sign-in failed');
         this.loading.set(false);

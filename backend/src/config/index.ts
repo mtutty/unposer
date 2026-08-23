@@ -31,7 +31,13 @@ export const config = {
   devAuth: {
     enabled: process.env.DEV_AUTH_ENABLED === 'true',
     username: process.env.DEV_AUTH_USERNAME || 'devuser',
-    password: process.env.DEV_AUTH_PASSWORD || 'devpass'
+    password: process.env.DEV_AUTH_PASSWORD || 'devpass',
+    // Second dev-bypass identity, distinct from the one above, so local/dev environments can
+    // exercise admin-only screens (see routes/admin.routes.ts) without wiring up real Google/
+    // GitHub OIDC. Maps to its own user row (role: 'admin') in AuthService.devLogin — never the
+    // same oidc_subject as the regular dev user.
+    adminUsername: process.env.DEV_AUTH_ADMIN_USERNAME || 'devadmin',
+    adminPassword: process.env.DEV_AUTH_ADMIN_PASSWORD || 'devadminpass'
   },
 
   oidc: {
