@@ -54,6 +54,7 @@ export interface FlowProgress {
   current_step: FlowStepId;
   steps_state: Record<FlowStepId, StepStatus>;
   logistics_channel: Channel | null;
+  deep_prompts_channel: Channel | null;
   created_at: string;
   updated_at: string;
 }
