@@ -68,6 +68,55 @@ export class TopicConversationService {
       throw new AppError('NO_ACTIVE_TOPIC', 'No open topic to continue by email — resume the session first.', 400);
     }
 
+    const lastAssistant = await this.resendPendingQuestionByEmail(thread);
+    return this.toMessage(lastAssistant, thread);
+  }
+
+  /** Step 5's channel picker (mirrors LogisticsService/InboxService's pattern — see
+   *  docs/deep-prompts-email-channel-gap-assessment.md). Unlike logistics, the choice persists
+   *  on flow_progress.deep_prompts_channel (set by the caller, deep-prompts.routes.ts) and every
+   *  subsequent topic opens on it by default; this method is what happens the moment the
+   *  candidate picks or changes it. Returns the active/just-opened topic's full exchange history
+   *  either way, so the frontend has something to render immediately. */
+  async chooseChannel(userId: string, channel: Channel): Promise<Message[]> {
+    const active = await this.getActiveThread(userId);
+    if (active) {
+      if (channel === 'email') {
+        await this.resendPendingQuestionByEmail(active);
+      }
+      const exchanges = await this.getExchanges(active.id);
+      return exchanges.map((e) => this.toMessage(e, active));
+    }
+
+    const question = await this.selection.selectNextQuestion(userId);
+    const thread = await this.openThread(userId, question.id);
+    const opener = await this.insertExchange(thread.id, 'assistant', question.prompt, channel);
+    if (channel === 'email') {
+      await this.email.deliverForTopic(thread, opener.text);
+    }
+    return [this.toMessage(opener, thread)];
+  }
+
+  /** Read-only view for the frontend's initial load / manual refresh of the email-thread UI — no
+   *  nudge computation like InboxService.getInbox has, since deep_prompts has no nudge concept of
+   *  its own (the weekly scheduler already handles proactive re-engagement, per the addendum). */
+  async getActiveThreadView(userId: string): Promise<{ channel: Channel; messages: Message[]; threadStatus: TopicThread['status'] | null }> {
+    const progress = await db('flow_progress').where({ user_id: userId }).first();
+    const channel: Channel = progress?.deep_prompts_channel ?? 'app';
+
+    const active = await this.getActiveThread(userId);
+    if (!active) {
+      return { channel, messages: [], threadStatus: null };
+    }
+
+    const messages = (await this.getExchanges(active.id)).map((e) => this.toMessage(e, active));
+    return { channel, messages, threadStatus: active.status };
+  }
+
+  /** Re-sends the active thread's most recent assistant exchange (the question currently awaiting
+   *  an answer) as a real email — shared by switchActiveTopicToEmail and chooseChannel's
+   *  active-thread branch. Doesn't insert a new exchange or touch thread continuity. */
+  private async resendPendingQuestionByEmail(thread: TopicThread): Promise<Exchange> {
     const exchanges = await this.getExchanges(thread.id);
     const lastAssistant = [...exchanges].reverse().find((e) => e.role === 'assistant');
     if (!lastAssistant) {
@@ -75,7 +124,7 @@ export class TopicConversationService {
     }
 
     await this.email.deliverForTopic(thread, lastAssistant.text);
-    return this.toMessage(lastAssistant, thread);
+    return lastAssistant;
   }
 
   /** Weekly scheduler's send primitive (Iteration 9, spec §3.5) — never called from the reply

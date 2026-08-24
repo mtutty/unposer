@@ -163,6 +163,94 @@ describe('TopicConversationService', () => {
     });
   });
 
+  describe('chooseChannel', () => {
+    const mockDeliverForTopic = EmailService.prototype.deliverForTopic as jest.Mock;
+
+    it('opens a new topic on the given channel and emails the opener when switching to email with nothing open', async () => {
+      const question = getQuestion('Q1')!;
+      mockSelectNext.mockResolvedValue(question);
+      builder.first.mockResolvedValueOnce(undefined); // getActiveThread: nothing open
+      builder.returning.mockResolvedValueOnce([threadFixture({ question_id: 'Q1' })]); // openThread
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ text: question.prompt, channel: 'email' })]); // opener
+      mockDeliverForTopic.mockResolvedValueOnce(undefined);
+
+      const result = await service.chooseChannel('user-1', 'email');
+
+      expect(mockDeliverForTopic).toHaveBeenCalledWith(expect.objectContaining({ question_id: 'Q1' }), question.prompt);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ role: 'assistant', content: question.prompt });
+    });
+
+    it('opens a new topic without emailing anything when the channel is app', async () => {
+      const question = getQuestion('Q1')!;
+      mockSelectNext.mockResolvedValue(question);
+      builder.first.mockResolvedValueOnce(undefined);
+      builder.returning.mockResolvedValueOnce([threadFixture({ question_id: 'Q1' })]);
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ text: question.prompt, channel: 'app' })]);
+
+      await service.chooseChannel('user-1', 'app');
+
+      expect(mockDeliverForTopic).not.toHaveBeenCalled();
+    });
+
+    it('resends the pending question by email and returns full history when switching an active thread to email', async () => {
+      const thread = threadFixture();
+      builder.first.mockResolvedValueOnce(thread); // getActiveThread
+      builder.select
+        .mockResolvedValueOnce([exchangeFixture({ id: 'ex-1', role: 'assistant', text: 'Opening question.' })]) // resendPendingQuestionByEmail
+        .mockResolvedValueOnce([exchangeFixture({ id: 'ex-1', role: 'assistant', text: 'Opening question.' })]); // getExchanges for return value
+      mockDeliverForTopic.mockResolvedValueOnce(undefined);
+
+      const result = await service.chooseChannel('user-1', 'email');
+
+      expect(mockDeliverForTopic).toHaveBeenCalledWith(thread, 'Opening question.');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ id: 'ex-1', content: 'Opening question.' });
+    });
+
+    it('just returns the existing history, no email, when switching an active thread back to app', async () => {
+      const thread = threadFixture();
+      builder.first.mockResolvedValueOnce(thread);
+      builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-1', role: 'assistant' })]);
+
+      const result = await service.chooseChannel('user-1', 'app');
+
+      expect(mockDeliverForTopic).not.toHaveBeenCalled();
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('getActiveThreadView', () => {
+    it('returns the persisted channel preference, empty messages, and a null status when nothing is open', async () => {
+      builder.first
+        .mockResolvedValueOnce({ deep_prompts_channel: 'email' }) // flow_progress lookup
+        .mockResolvedValueOnce(undefined); // getActiveThread
+
+      const result = await service.getActiveThreadView('user-1');
+
+      expect(result).toEqual({ channel: 'email', messages: [], threadStatus: null });
+    });
+
+    it('defaults to app when no channel preference is stored yet', async () => {
+      builder.first.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+
+      const result = await service.getActiveThreadView('user-1');
+
+      expect(result.channel).toBe('app');
+    });
+
+    it('returns the active thread\'s messages and status', async () => {
+      const thread = threadFixture({ status: 'open' });
+      builder.first.mockResolvedValueOnce({ deep_prompts_channel: 'app' }).mockResolvedValueOnce(thread);
+      builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-1' })]);
+
+      const result = await service.getActiveThreadView('user-1');
+
+      expect(result.threadStatus).toBe('open');
+      expect(result.messages).toHaveLength(1);
+    });
+  });
+
   describe('postUserMessage', () => {
     it('throws NO_ACTIVE_TOPIC when there is nothing open to reply to', async () => {
       builder.first.mockResolvedValueOnce(undefined);
