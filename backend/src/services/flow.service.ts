@@ -24,10 +24,15 @@ export class FlowService {
     return progress;
   }
 
-  async setChannel(userId: string, channel: 'app' | 'email'): Promise<FlowProgress> {
+  async setChannel(
+    userId: string,
+    step: 'logistics' | 'deep_prompts',
+    channel: 'app' | 'email'
+  ): Promise<FlowProgress> {
+    const column = step === 'logistics' ? 'logistics_channel' : 'deep_prompts_channel';
     const [progress] = await db('flow_progress')
       .where({ user_id: userId })
-      .update({ logistics_channel: channel, updated_at: new Date() })
+      .update({ [column]: channel, updated_at: new Date() })
       .returning('*');
     return progress;
   }

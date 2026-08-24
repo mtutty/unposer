@@ -76,7 +76,7 @@ describe('logistics.routes', () => {
 
       expect(res.status).toBe(200);
       expect(mockLogisticsService.ensureResponse).toHaveBeenCalledWith('u1');
-      expect(mockFlowService.setChannel).toHaveBeenCalledWith('u1', 'app');
+      expect(mockFlowService.setChannel).toHaveBeenCalledWith('u1', 'logistics', 'app');
       expect(mockConversationService.ensureOpeningMessage).toHaveBeenCalledWith('u1', 'logistics', 'app');
       expect(mockInboxService.openThread).not.toHaveBeenCalled();
       expect(res.body.channel).toBe('app');
@@ -88,7 +88,7 @@ describe('logistics.routes', () => {
       const res = await request(app).post('/channel').set('x-test-user', 'u1').send({ channel: 'email' });
 
       expect(res.status).toBe(200);
-      expect(mockFlowService.setChannel).toHaveBeenCalledWith('u1', 'email');
+      expect(mockFlowService.setChannel).toHaveBeenCalledWith('u1', 'logistics', 'email');
       expect(mockInboxService.openThread).toHaveBeenCalledWith('u1');
       expect(mockConversationService.ensureOpeningMessage).not.toHaveBeenCalled();
       expect(res.body.channel).toBe('email');

@@ -28,7 +28,7 @@ router.post('/channel', requireAuth, validate(channelSchema), async (req: AuthRe
   try {
     const { channel } = req.body;
     await logisticsService.ensureResponse(req.userId!);
-    await flowService.setChannel(req.userId!, channel);
+    await flowService.setChannel(req.userId!, 'logistics', channel);
 
     const messages =
       channel === 'app'

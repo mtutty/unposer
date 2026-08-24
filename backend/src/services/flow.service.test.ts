@@ -26,6 +26,7 @@ function progressFixture(overrides: Partial<FlowProgress> = {}): FlowProgress {
     current_step: 'resume',
     steps_state: { resume: 'in_progress' } as FlowProgress['steps_state'],
     logistics_channel: null,
+    deep_prompts_channel: null,
     created_at: new Date(),
     updated_at: new Date(),
     ...overrides
@@ -132,6 +133,26 @@ describe('FlowService', () => {
 
       const [update] = builder.update.mock.calls[0];
       expect(update.current_step).toBe(last.id);
+    });
+  });
+
+  describe('setChannel', () => {
+    it('writes logistics_channel when step is logistics', async () => {
+      builder.returning.mockResolvedValue([progressFixture({ logistics_channel: 'email' })]);
+
+      await service.setChannel('user-1', 'logistics', 'email');
+
+      const [update] = builder.update.mock.calls[0];
+      expect(update).toEqual({ logistics_channel: 'email', updated_at: expect.any(Date) });
+    });
+
+    it('writes deep_prompts_channel when step is deep_prompts', async () => {
+      builder.returning.mockResolvedValue([progressFixture({ deep_prompts_channel: 'app' })]);
+
+      await service.setChannel('user-1', 'deep_prompts', 'app');
+
+      const [update] = builder.update.mock.calls[0];
+      expect(update).toEqual({ deep_prompts_channel: 'app', updated_at: expect.any(Date) });
     });
   });
 

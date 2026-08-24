@@ -24,6 +24,7 @@ function progressWith(state: Partial<Record<string, 'pending' | 'in_progress' | 
     current_step: current as any,
     steps_state: state as any,
     logistics_channel: null,
+    deep_prompts_channel: null,
     created_at: '',
     updated_at: ''
   };
