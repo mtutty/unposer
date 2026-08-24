@@ -23,7 +23,7 @@
 | 2 | Resume upload / manual entry | App |
 | 3 | Logistics discussion (goals, industry, location, priorities) | **App or Email (user's choice)** |
 | 4 | *(channel selection is embedded in Step 3, not a separate step)* | — |
-| 5 | Deep prompts (personality, collaboration style, formative situations) | **App (live chat) only** |
+| 5 | Deep prompts (personality, collaboration style, formative situations) | **App or Email (user's choice)** |
 | 6 | AI-generated profile + lightweight correction | App |
 | 7 | Interactive sandbox — preview the "virtual interview" experience | App |
 | 8 | Shareable, time-boxed recruiter access link | App-generated, external access |
@@ -103,26 +103,26 @@ Stubbed for development. No further spec needed at this stage.
 - The email thread and any app-based session for the same user must resolve to **one unified profile state** — no separate "email profile" and "chat profile" to reconcile later.
 - Reasonable bounds needed: thread length cap, timeout/nudge logic if a user goes silent mid-thread, and a way to pick the thread back up seamlessly from the app.
 
-**Design intent — real email gateway (not built in v1):** the product direction is for most
-candidate interaction to eventually happen over email (an AWS SES-style gateway, potentially
-including resume intake by email, not just Step 3 logistics), with the in-app experience as the
-fallback rather than the default. Nothing here should block that later. Concretely: `channel` is
-already a first-class, per-message property (not inferred from context), and `messages`/
-`conversation_threads` are channel-agnostic — the elicitation engine (`ConversationService`)
-doesn't know or care whether it's talking through chat or a simulated inbox. The v1 "email
-channel" is simulated in-app (same tables, rendered as an inbox) rather than wired to real
-SMTP/IMAP — see `backend/src/services/inbox.service.ts`. Wiring a real gateway later is additive:
-an outbound delivery adapter (SES `SendEmail` instead of/alongside writing the row) and an inbound
-route that turns an SES/SNS notification into the same `postUserMessage` call a chat reply makes
-today. No schema or elicitation-logic changes anticipated. `InboxService` currently hardcodes
-`step: 'logistics'`; generalizing it to any email-eligible step is a prerequisite for
-email-based resume intake, deferred until that's actually being built.
+**Design intent — real email gateway (built):** the product direction was for most candidate
+interaction to eventually happen over email, with the in-app experience as the fallback rather
+than the default — that's now real, not aspirational. `channel` is a first-class, per-message
+property (not inferred from context), and `messages`/`conversation_threads` (Step 3) and
+`topic_thread`/`exchange` (Step 5) are channel-agnostic — the elicitation engines
+(`ConversationService`, `TopicConversationService`) don't know or care whether a given turn
+arrived through chat or email. Outbound/inbound delivery goes through Resend
+(`backend/src/services/email.service.ts` for outbound, `backend/src/routes/webhooks.routes.ts`'s
+Svix-verified webhook for inbound) — see CLAUDE.md's "Email gateway (real, via Resend)" section
+for the full picture, including the deliberate in-app-reply-stays-in-app asymmetry.
+`RESEND_API_KEY` unset keeps everything simulated in-app exactly as this section used to describe.
+Resume intake by email is still unbuilt — `InboxService` (Step 3) and its `TopicConversationService`
+equivalent (Step 5) both still only cover their own step; generalizing further is a prerequisite
+for email-based resume intake, deferred until that's actually being built.
 
 ---
 
 ## Step 5 — Deep Prompts (Personality, Collaboration Style, Formative Situations)
 
-**Channel: live chat only** — no email. The adaptive, real-time back-and-forth is doing real methodological work here (per the research primer: critical-incident and storytelling-based prompts outperform direct self-assessment, and that depends on being able to probe in the moment).
+**Channel: user's choice, app or email** — superseded from this doc's original "live chat only" decision by `docs/personality-engine-flow-addendum.md` §3: the candidate picks once up front (mirroring Step 3's picker) and can move a topic to email, or back to chat, at any point. Chat is still the default, since the adaptive, real-time back-and-forth is doing real methodological work here (per the research primer: critical-incident and storytelling-based prompts outperform direct self-assessment, and that depends on being able to probe in the moment) — but that work isn't lost by answering async, since the AI still reads the full thread and asks a grounded follow-up either way, just at async pace.
 
 **Content approach:**
 - Open-ended, self-descriptive questions only. No numeric or forced-choice items anywhere in this step.

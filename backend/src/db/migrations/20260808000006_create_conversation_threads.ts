@@ -1,8 +1,9 @@
 import type { Knex } from 'knex';
 
-// One thread per (user, step). Covers both the Step 3 logistics conversation (app or email) and
-// the Step 5 deep-prompt chat (app only). Email-channel bookkeeping (cap/silence/nudge) lives
-// here so the app and email paths resolve to one unified state, never a separate "email profile".
+// One thread per (user, step). Covers the Step 3 logistics conversation (app or email) — Step 5
+// deep-prompt chat moved onto its own topic_thread/exchange model (see those migrations), not
+// this table. Email-channel bookkeeping (cap/silence/nudge) lives here so the app and email paths
+// resolve to one unified state, never a separate "email profile".
 export async function up(knex: Knex): Promise<void> {
   return knex.schema.createTable('conversation_threads', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));

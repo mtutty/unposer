@@ -18,9 +18,9 @@ const STOPS: TimelineStop[] = [
   {
     num: '02',
     title: 'Go deeper, in real conversation',
-    tag: 'Live chat only',
+    tag: 'Chat or email, any hour',
     body:
-      'A handful of open-ended "tell me about a time…" conversations surface what a resume never captures: the calls you made under pressure, how you actually work with people, what conditions bring out your best. This step is live chat by design — the adaptive follow-ups are what get past a rehearsed answer to the real one.'
+      'A handful of open-ended "tell me about a time…" conversations surface what a resume never captures: the calls you made under pressure, how you actually work with people, what conditions bring out your best. Answer live or by email, and move any story to the other channel whenever it suits you — the adaptive follow-ups are what get past a rehearsed answer to the real one.'
   },
   {
     num: '03',
