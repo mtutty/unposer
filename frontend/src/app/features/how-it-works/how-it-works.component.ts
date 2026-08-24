@@ -26,6 +26,7 @@ import { HowItWorksContentComponent } from './how-it-works-content.component';
       </section>
 
       <section class="container section">
+        <img class="watermark" src="/unposer-trans.png" alt="" aria-hidden="true" />
         <app-how-it-works-content />
       </section>
 
@@ -44,9 +45,11 @@ import { HowItWorksContentComponent } from './how-it-works-content.component';
   styles: [
     `
       .page {
+        position: relative;
         min-height: 100%;
         display: flex;
         flex-direction: column;
+        overflow-x: hidden;
       }
 
       .hero {
@@ -79,7 +82,26 @@ import { HowItWorksContentComponent } from './how-it-works-content.component';
       }
 
       .section {
+        position: relative;
         padding: 3.5rem 1.5rem;
+      }
+
+      .watermark {
+        position: absolute;
+        top: 55%;
+        left: -22rem;
+        width: min(46rem, 75vw);
+        max-width: none;
+        transform: translateY(calc(-30% - 150px));
+        opacity: 0.07;
+        pointer-events: none;
+        user-select: none;
+        z-index: 0;
+      }
+
+      .section > app-how-it-works-content {
+        position: relative;
+        z-index: 1;
       }
 
       .footer {

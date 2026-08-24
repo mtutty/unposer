@@ -9,7 +9,7 @@ import { AuthService } from '../../../core/auth/auth.service';
     template: `
     <header class="topbar">
       <a [routerLink]="auth.currentUser()?.role === 'admin' ? '/admin/users' : '/dashboard'" class="brand font-display">
-        <span class="brand-mark" aria-hidden="true">✦</span>
+        <img class="brand-mark" src="/light/favicon-48x48.png" alt="" aria-hidden="true" />
         Unposer
       </a>
       @if (auth.currentUser(); as user) {
@@ -54,11 +54,13 @@ import { AuthService } from '../../../core/auth/auth.service';
         color: var(--paper-text);
         text-decoration: none;
         font-weight: 600;
-        font-size: 1.05rem;
+        font-size: 1.365rem;
       }
 
       .brand-mark {
-        color: var(--brass);
+        object-fit: contain;
+        border-radius: 50%;
+        flex-shrink: 0;
       }
 
       .user {

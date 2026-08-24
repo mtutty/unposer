@@ -22,6 +22,7 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
     template: `
     <app-public-nav />
     <div class="screen">
+      <img class="watermark" src="/light/unposer-trans.png" alt="" aria-hidden="true" />
       <div class="pitch">
         <span class="stamp stamp-brass">v1 prototype</span>
         <h1>Unposer</h1>
@@ -99,6 +100,7 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
     styles: [
         `
       .screen {
+        position: relative;
         min-height: 100%;
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
@@ -106,11 +108,31 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
         gap: 3.5rem;
         background: var(--cover);
         padding: 3rem 2rem;
+        overflow: hidden;
 
         @media (max-width: 860px) {
           grid-template-columns: 1fr;
           gap: 2.5rem;
         }
+      }
+
+      .watermark {
+        position: absolute;
+        top: 8%;
+        left: 4%;
+        width: min(50rem, 80vw);
+        max-width: none;
+        transform: translate(-22%, -10%);
+        opacity: 0.1;
+        pointer-events: none;
+        user-select: none;
+        z-index: 0;
+      }
+
+      .pitch,
+      .panel {
+        position: relative;
+        z-index: 1;
       }
 
       .pitch {

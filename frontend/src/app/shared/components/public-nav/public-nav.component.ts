@@ -12,7 +12,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
   template: `
     <header class="nav">
       <a routerLink="/login" class="brand font-display">
-        <span class="brand-mark" aria-hidden="true">✦</span>
+        <img class="brand-mark" src="/light/favicon-48x48.png" alt="" aria-hidden="true" />
         Unposer
       </a>
       <nav class="links">
@@ -39,11 +39,13 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         color: var(--paper-text);
         text-decoration: none;
         font-weight: 600;
-        font-size: 1.05rem;
+        font-size: 1.365rem;
       }
 
       .brand-mark {
-        color: var(--brass);
+        object-fit: contain;
+        border-radius: 50%;
+        flex-shrink: 0;
       }
 
       .links {
