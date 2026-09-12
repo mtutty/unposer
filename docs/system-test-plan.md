@@ -312,6 +312,38 @@ exercise it deliberately rather than leaving it running unattended.
 
 ---
 
+## 9.5. Logistics (Step 3) email-thread proactive nudge
+
+A separate, smaller job from the weekly scheduler above — same `SCHEDULER_ENABLED` master switch,
+its own hourly cadence (`LOGISTICS_NUDGE_CRON`), and it watches `conversation_threads`
+(hours-of-silence), not `progression`/`topic_thread` (weeks). Don't conflate the two.
+
+1. **Confirm it's off by default:**
+   ```bash
+   docker-compose logs api | grep logistics-nudge-scheduler
+   ```
+   - *Expect:* `[logistics-nudge-scheduler] disabled (SCHEDULER_ENABLED != true) — not scheduling`.
+2. **Exercise the check logic directly without leaving the cron armed:**
+   ```bash
+   docker-compose exec api npx ts-node -e "
+   import { LogisticsNudgeSchedulerService } from './src/services/logistics-nudge-scheduler.service';
+   (async () => {
+     console.log(await new LogisticsNudgeSchedulerService().runCheck());
+   })();
+   "
+   ```
+   - *Expect:* a `{ processed, nudged }` summary. Back-date a test account's
+     `conversation_threads.last_message_at` past `config.flow.emailSilenceHours` (default 48) on an
+     `email`-channel, `awaiting_reply` thread first if nothing is due yet.
+3. **No double-nudging:** run the check again immediately after step 2. *Expect:* `nudged: 0` for
+   the same thread — `last_nudge_at` is now newer than `last_message_at`, so `threadNeedsNudge`
+   (shared with `GET /inbox`'s own in-app indicator) correctly excludes it.
+4. **Manual nudge still works independently:** with a thread genuinely due, click the in-app
+   "send nudge" affordance (or `POST /inbox/nudge`) rather than waiting for the scheduled check.
+   *Expect:* identical composed nudge either way — same `InboxService.sendNudge` underneath.
+
+---
+
 ## 10. Cross-cutting / regression checks
 
 - **`npm test` (backend) and `npm run test:ci` (frontend)** both green — this is the fast,
@@ -340,10 +372,6 @@ Don't file these as bugs — they're documented decisions, not oversights:
   score renders anywhere as a direct consequence (Iteration 7 notes).
 - **LinkedIn OIDC** — not implemented; dev-login bypass remains the only path if Google/GitHub
   aren't configured.
-- **Scheduled nudges for the Step 3 (logistics) email thread** are still composed on-demand when
-  the candidate opens the inbox, not proactively — this is a *different* mechanism from the
-  Iteration 9 weekly scheduler (§9 above), which covers Step 5 (`topic_thread`) only. Don't
-  conflate the two when testing.
 - **Step 6.5 "Career Debrief"** — proposed, not built. Its market-data half is a hard block
   pending a real external data source (see `docs/labor-market-data-source-catalog.md`).
 - **Employer-side onboarding, matching/discovery, share-link analytics** — out of scope for v1 per

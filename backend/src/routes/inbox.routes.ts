@@ -31,7 +31,10 @@ router.post('/reply', requireAuth, validate(replySchema), async (req: AuthReques
   }
 });
 
-// No scheduler in this prototype — the frontend calls this when GET /inbox reports needsNudge.
+// Manual/immediate path — the frontend calls this when GET /inbox reports needsNudge. Kept
+// alongside logistics-nudge-scheduler.service.ts's proactive checks (same InboxService.sendNudge
+// underneath), not superseded by them: a candidate who opens the inbox themselves shouldn't have
+// to wait for the next scheduled pass.
 router.post('/nudge', requireAuth, async (req: AuthRequest, res, next) => {
   try {
     res.json(await inboxService.sendNudge(req.userId!));

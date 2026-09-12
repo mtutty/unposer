@@ -11,6 +11,24 @@ export interface InboxView {
   hoursSinceLastMessage: number | null;
 }
 
+/** The single "is this thread overdue for a nudge" predicate — shared by getInbox's in-app
+ *  indicator (frontend's manual "send nudge" affordance) and logistics-nudge-scheduler.service.ts's
+ *  proactive check (see that file), so the two paths can never drift into disagreeing about which
+ *  threads are stalled. A thread needs a nudge when: it's email-channel, `awaiting_reply`, has
+ *  gone silent for at least `config.flow.emailSilenceHours`, and hasn't already been nudged more
+ *  recently than the last message (re-nudging a thread that's already been nudged since the
+ *  candidate last wrote would just be spam). */
+export function threadNeedsNudge(thread: ConversationThread, now: Date = new Date()): boolean {
+  if (thread.channel !== 'email' || thread.status !== 'awaiting_reply' || !thread.last_message_at) return false;
+
+  const lastMessageAt = new Date(thread.last_message_at);
+  const hoursSinceLastMessage = (now.getTime() - lastMessageAt.getTime()) / (1000 * 60 * 60);
+  if (hoursSinceLastMessage < config.flow.emailSilenceHours) return false;
+
+  const lastNudgeAt = thread.last_nudge_at ? new Date(thread.last_nudge_at) : null;
+  return !lastNudgeAt || lastNudgeAt < lastMessageAt;
+}
+
 /**
  * In-app view of the Step 3/4 email channel — the "inbox" is the same conversation_threads/
  * messages rows the app-channel chat uses, styled as a thread so the candidate can pick it back
@@ -34,16 +52,7 @@ export class InboxService {
     const lastMessageAt = thread.last_message_at ? new Date(thread.last_message_at) : null;
     const hoursSinceLastMessage = lastMessageAt ? (Date.now() - lastMessageAt.getTime()) / (1000 * 60 * 60) : null;
 
-    const lastNudgeAt = thread.last_nudge_at ? new Date(thread.last_nudge_at) : null;
-    const nudgeIsStale = !lastNudgeAt || (lastMessageAt && lastNudgeAt < lastMessageAt);
-
-    const needsNudge =
-      thread.status === 'awaiting_reply' &&
-      hoursSinceLastMessage !== null &&
-      hoursSinceLastMessage >= config.flow.emailSilenceHours &&
-      !!nudgeIsStale;
-
-    return { thread, messages, needsNudge, hoursSinceLastMessage };
+    return { thread, messages, needsNudge: threadNeedsNudge(thread), hoursSinceLastMessage };
   }
 
   /** Opens the email thread, generating the first "email" if none exists yet — and, unlike a
@@ -69,7 +78,10 @@ export class InboxService {
     return this.conversation.postUserMessage(userId, 'logistics', 'email', content);
   }
 
-  /** No scheduler in this prototype — a nudge is composed the next time the candidate opens the inbox. */
+  /** Composes and sends one nudge for this user's logistics email thread. Two callers: the
+   *  frontend's manual "send nudge" affordance (POST /inbox/nudge, immediate, candidate-
+   *  initiated) and logistics-nudge-scheduler.service.ts's proactive check (see that file) —
+   *  same method either way, so a nudge looks identical regardless of what triggered it. */
   async sendNudge(userId: string): Promise<Message> {
     const thread = await db('conversation_threads').where({ user_id: userId, step: 'logistics' }).first();
     if (!thread || thread.channel !== 'email') {

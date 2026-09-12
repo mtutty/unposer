@@ -90,7 +90,15 @@ export const config = {
   scheduler: {
     enabled: process.env.SCHEDULER_ENABLED === 'true',
     // Default: every Monday 09:00 server time. node-cron syntax (5-field, no seconds field).
-    cronExpression: process.env.SCHEDULER_CRON || '0 9 * * 1'
+    cronExpression: process.env.SCHEDULER_CRON || '0 9 * * 1',
+    // Step 3 (logistics) email-thread nudges (logistics-nudge-scheduler.service.ts) — a
+    // different cadence than the weekly re-engagement job above (hours-since-silence, not
+    // weeks), so its own cron expression, but the same master `enabled` switch: both are "emails
+    // a real candidate unprompted on a timer," and one kill switch for that class of job is
+    // simpler to reason about in ops than two flags that would almost always be set together.
+    // Default: hourly — cheap to check, and keeps the actual nudge close to the
+    // config.flow.emailSilenceHours threshold rather than trailing it by up to a full day.
+    logisticsNudgeCronExpression: process.env.LOGISTICS_NUDGE_CRON || '0 * * * *'
   },
 
   flow: {
