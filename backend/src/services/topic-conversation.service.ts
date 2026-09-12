@@ -229,7 +229,7 @@ export class TopicConversationService {
     const dimensions = Object.keys(question.dimensionLoads) as DimensionKey[];
     const evidenceSource = { questionId: question.id, heavy: question.heavy };
     const extraction = this.scoring
-      .extractAndPersist(userExchange.id, question.prompt, content, dimensions)
+      .extractAndPersist(userExchange.id, question.prompt, content, dimensions, question.heavy)
       .then((rows) => {
         // Indexed for RAG (spec §8/Iteration 8) as its own fire-and-forget step, same posture as
         // indexDeepPromptSubstrate below — never gates the turn.

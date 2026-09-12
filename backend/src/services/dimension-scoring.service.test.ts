@@ -60,6 +60,34 @@ describe('DimensionScoringService.extractAndPersist', () => {
     expect(result).toEqual([{ id: 'ev-1', dimension: 'work_style' }]);
   });
 
+  it('stamps heavy (default false) onto every inserted row from the caller-supplied flag', async () => {
+    mockScoreDimension.mockResolvedValueOnce({
+      dimension: 'emotional_stability',
+      evidence: [{ span: 'a', direction: 'low', strength: 'strong', type: 'explicit_statement', facet: 'stress', note: 'n' }],
+      provisionalScore: 20,
+      confidence: 'medium',
+      reasoning: 'r'
+    });
+    builder.returning.mockResolvedValueOnce([{ id: 'ev-1' }]);
+
+    await service.extractAndPersist('exchange-1', 'Q?', 'A.', ['emotional_stability'], true);
+
+    expect(builder.insert).toHaveBeenCalledWith([expect.objectContaining({ heavy: true })]);
+
+    mockScoreDimension.mockResolvedValueOnce({
+      dimension: 'openness',
+      evidence: [{ span: 'b', direction: 'high', strength: 'weak', type: 'linguistic_marker', facet: 'ideas', note: 'n' }],
+      provisionalScore: 60,
+      confidence: 'low',
+      reasoning: 'r'
+    });
+    builder.returning.mockResolvedValueOnce([{ id: 'ev-2' }]);
+
+    await service.extractAndPersist('exchange-2', 'Q?', 'A.', ['openness']);
+
+    expect(builder.insert).toHaveBeenLastCalledWith([expect.objectContaining({ heavy: false })]);
+  });
+
   it('returns an empty array and never touches the DB when no dimension produces evidence', async () => {
     mockScoreDimension.mockResolvedValue({
       dimension: 'openness',

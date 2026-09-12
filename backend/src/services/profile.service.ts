@@ -134,8 +134,16 @@ export class ProfileService {
         id: pi.id,
         category: pi.type,
         statement: pi.text,
-        evidence: evidenceRow?.span ?? pi.text,
-        status: 'active'
+        // Never the raw span verbatim for a heavy (Q5/Q6/Q19/Q20) evidence row — this field
+        // lands in profile_data.insights, which sandbox-chat.chain.ts's describeProfile() sends
+        // on *every* recruiter turn as default context, not just via the RAG fallback. Falling
+        // back to pi.text (the insight's own narrative sentence, never a verbatim quote for a
+        // heavy source — see insight-generator.chain.ts's own_words filter) keeps the field
+        // populated with something true, just not the raw quote. Closes the gap
+        // personality-engine-implementation-plan.md's Iteration 8 notes flagged as unaddressed.
+        evidence: evidenceRow && !evidenceRow.heavy ? evidenceRow.span : pi.text,
+        status: 'active',
+        heavy: pi.heavy
       });
     }
     return result;

@@ -21,7 +21,7 @@ describe('generateInsights', () => {
 
     await generateInsights({
       dimensions: [
-        { dimension: 'motivation', score: 80, band: 'medium', contextDependenceEligible: false, evidence: [{ id: 'ev1', span: 's', direction: 'high', note: 'n' }] }
+        { dimension: 'motivation', score: 80, band: 'medium', contextDependenceEligible: false, evidence: [{ id: 'ev1', span: 's', direction: 'high', note: 'n', heavy: false }] }
         // dominance not included — its tension pairing with motivation should not appear.
       ]
     });
@@ -34,8 +34,8 @@ describe('generateInsights', () => {
 
     await generateInsights({
       dimensions: [
-        { dimension: 'motivation', score: 80, band: 'medium', contextDependenceEligible: false, evidence: [{ id: 'ev1', span: 's', direction: 'high', note: 'n' }] },
-        { dimension: 'dominance', score: 20, band: 'medium', contextDependenceEligible: false, evidence: [{ id: 'ev2', span: 's2', direction: 'low', note: 'n2' }] }
+        { dimension: 'motivation', score: 80, band: 'medium', contextDependenceEligible: false, evidence: [{ id: 'ev1', span: 's', direction: 'high', note: 'n', heavy: false }] },
+        { dimension: 'dominance', score: 20, band: 'medium', contextDependenceEligible: false, evidence: [{ id: 'ev2', span: 's2', direction: 'low', note: 'n2', heavy: false }] }
       ]
     });
 
@@ -48,8 +48,8 @@ describe('generateInsights', () => {
 
     await generateInsights({
       dimensions: [
-        { dimension: 'dominance', score: 60, band: 'medium', contextDependenceEligible: true, evidence: [{ id: 'ev1', span: 's', direction: 'high', note: 'n' }] },
-        { dimension: 'openness', score: 40, band: 'medium', contextDependenceEligible: false, evidence: [{ id: 'ev2', span: 's2', direction: 'low', note: 'n2' }] }
+        { dimension: 'dominance', score: 60, band: 'medium', contextDependenceEligible: true, evidence: [{ id: 'ev1', span: 's', direction: 'high', note: 'n', heavy: false }] },
+        { dimension: 'openness', score: 40, band: 'medium', contextDependenceEligible: false, evidence: [{ id: 'ev2', span: 's2', direction: 'low', note: 'n2', heavy: false }] }
       ]
     });
 
@@ -63,7 +63,7 @@ describe('generateInsights', () => {
 
   it('drops any insight citing an id or dimension not in the provided input, and caps at 7', async () => {
     const dims = [
-      { dimension: 'openness' as const, score: 80, band: 'high', contextDependenceEligible: false, evidence: [{ id: 'ev1', span: 's', direction: 'high' as const, note: 'n' }] }
+      { dimension: 'openness' as const, score: 80, band: 'high', contextDependenceEligible: false, evidence: [{ id: 'ev1', span: 's', direction: 'high' as const, note: 'n', heavy: false }] }
     ];
     mockStructuredCall.mockResolvedValueOnce({
       insights: [
@@ -83,5 +83,47 @@ describe('generateInsights', () => {
     expect(result.every((i) => i.supportingEvidenceIds.every((id) => id === 'ev1'))).toBe(true);
     expect(result.find((i) => i.text === 'hallucinated evidence id')).toBeUndefined();
     expect(result.length).toBeLessThanOrEqual(7);
+  });
+
+  it('marks a heavy evidence span RESTRICTED in the prompt', async () => {
+    mockStructuredCall.mockResolvedValue({ insights: [] });
+
+    await generateInsights({
+      dimensions: [
+        {
+          dimension: 'emotional_stability',
+          score: 30,
+          band: 'medium',
+          contextDependenceEligible: false,
+          evidence: [{ id: 'ev1', span: 'a heavy span', direction: 'low', note: 'n', heavy: true }]
+        }
+      ]
+    });
+
+    const [, , human] = mockStructuredCall.mock.calls[0];
+    expect(human).toContain('[ev1] [RESTRICTED]');
+  });
+
+  it('drops an own_words insight citing a heavy evidence id, but keeps other types citing the same id', async () => {
+    const dims = [
+      {
+        dimension: 'emotional_stability' as const,
+        score: 30,
+        band: 'medium',
+        contextDependenceEligible: false,
+        evidence: [{ id: 'ev-heavy', span: 'a heavy span', direction: 'low' as const, note: 'n', heavy: true }]
+      }
+    ];
+    mockStructuredCall.mockResolvedValueOnce({
+      insights: [
+        { type: 'own_words', text: 'verbatim quote of the heavy span', supportingDimensions: ['emotional_stability'], supportingEvidenceIds: ['ev-heavy'] },
+        { type: 'pattern', text: 'a narrative read drawing on it', supportingDimensions: ['emotional_stability'], supportingEvidenceIds: ['ev-heavy'] }
+      ]
+    });
+
+    const result = await generateInsights({ dimensions: dims });
+
+    expect(result.find((i) => i.type === 'own_words')).toBeUndefined();
+    expect(result.find((i) => i.type === 'pattern')).toBeDefined();
   });
 });

@@ -85,6 +85,24 @@ describe('EvidenceService.indexDistilledProfile', () => {
     expect(rows[0].embedding).toMatch(/^\[[\d.,]+\]$/);
   });
 
+  it('tags each insight chunk\'s metadata with heavy from ProfileInsight.heavy, and star stories as never heavy', async () => {
+    mockEmbedTexts.mockResolvedValueOnce([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]);
+    await service.indexDistilledProfile(
+      'user-1',
+      profileFixture({
+        insights: [
+          { id: 'insight-1', category: 'strength', statement: 'Great collaborator', status: 'active', evidence: 'Led a project', heavy: false },
+          { id: 'insight-2', category: 'own_words', statement: 'A quoted moment', status: 'active', evidence: 'a narrative fallback', heavy: true }
+        ]
+      })
+    );
+
+    const [rows] = builder.insert.mock.calls[0];
+    expect(rows.find((r: any) => r.source_ref === 'insight-1').metadata).toEqual({ heavy: false });
+    expect(rows.find((r: any) => r.source_ref === 'insight-2').metadata).toEqual({ heavy: true });
+    expect(rows.find((r: any) => r.kind === 'star_story').metadata).toEqual({ heavy: false });
+  });
+
   it('skips the insert (but still clears stale rows) when the profile has no insights or stories', async () => {
     await service.indexDistilledProfile('user-1', profileFixture({ insights: [], starStories: [] }));
 
@@ -230,17 +248,20 @@ describe('EvidenceService.search — recruiter audience (§8, Iteration 8)', () 
 
     await service.search('user-1', 'a question', 5);
 
+    const [profileSql] = dbRaw.mock.calls[0];
     const [conversationSql] = dbRaw.mock.calls[1];
+    expect(profileSql).not.toContain('heavy');
     expect(conversationSql).not.toContain('heavy');
     expect(mockDb).not.toHaveBeenCalledWith('rag_audit_log');
   });
 
-  it('logs the recruiter query with the returned count and the candidate\'s total restricted-row count', async () => {
+  it('logs the recruiter query with the returned count and the candidate\'s total restricted-row count across both tables', async () => {
     const dbRaw = (db as any).raw as jest.Mock;
     dbRaw
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 'c1', content: 'safe content', metadata: {}, similarity: 0.6 }] });
-    builder.first.mockResolvedValueOnce({ n: '3' });
+    // Two separate restricted-row counts now — conversation_evidence, then profile_evidence.
+    builder.first.mockResolvedValueOnce({ n: '3' }).mockResolvedValueOnce({ n: '2' });
 
     await service.search('user-1', 'the query text', 5, 'recruiter');
 
@@ -251,9 +272,20 @@ describe('EvidenceService.search — recruiter audience (§8, Iteration 8)', () 
         audience: 'recruiter',
         query: 'the query text',
         results_returned: 1,
-        results_excluded_restricted: 3
+        results_excluded_restricted: 5
       })
     );
+  });
+
+  it('adds the heavy-exclusion clause to the distilled-tier SQL too, for a recruiter query', async () => {
+    const dbRaw = (db as any).raw as jest.Mock;
+    dbRaw.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+    builder.first.mockResolvedValue({ n: '0' });
+
+    await service.search('user-1', 'how do they handle pressure', 5, 'recruiter');
+
+    const [profileSql] = dbRaw.mock.calls[0];
+    expect(profileSql).toContain("heavy')::boolean IS NOT TRUE");
   });
 
   it('does not let a failed audit-log write break the actual search results', async () => {

@@ -20,7 +20,8 @@ export class DimensionScoringService {
     exchangeId: string,
     questionText: string,
     answerText: string,
-    dimensions: DimensionKey[]
+    dimensions: DimensionKey[],
+    heavy = false
   ): Promise<DimensionEvidence[]> {
     const inserted: DimensionEvidence[] = [];
 
@@ -36,7 +37,11 @@ export class DimensionScoringService {
         strength: e.strength,
         type: e.type,
         facet: e.facet,
-        note: e.note
+        note: e.note,
+        // Stamped from the question library (topic-conversation.service.ts's call site), the
+        // same source Iteration 8's RAG-chunk tagging already used — see this column's own
+        // migration for why dimension_evidence didn't carry it until now.
+        heavy
       }));
 
       const insertedRows = await db('dimension_evidence').insert(rows).returning('*');

@@ -157,6 +157,58 @@ describe('ProfileService.generateProfile', () => {
     expect(mockRegenerateCultureSignal).toHaveBeenCalledWith('user-1');
     expect(result).toEqual(inserted);
   });
+
+  it('never uses a heavy dimension_evidence span verbatim as a personality insight\'s evidence field, falling back to its own narrative text', async () => {
+    builder.first
+      .mockResolvedValueOnce({ confirmed: true, structured_data: {}, is_career_changer: false }) // resumes
+      .mockResolvedValueOnce({ data: {} }); // logistics_responses
+    mockGetTier.mockResolvedValueOnce('sketch');
+    mockGetFullTranscript.mockResolvedValueOnce([]);
+    mockRegenerateInsights.mockResolvedValueOnce([
+      {
+        id: 'pi-uuid-2',
+        user_id: 'user-1',
+        type: 'tension',
+        text: 'A narrative read, never a verbatim quote.',
+        supporting_evidence_ids: ['ev-heavy'],
+        surfaced_to_user: true,
+        surfaced_to_recruiter: false,
+        heavy: true,
+        created_at: new Date(),
+        updated_at: new Date()
+      }
+    ]);
+    mockGenerateCandidateProfile.mockResolvedValueOnce({
+      headline: 'h',
+      summary: 's',
+      workHistory: [],
+      insights: [],
+      workStyle: { preferredEnvironment: '', teamDynamics: '', communicationStyle: '' },
+      goals: { shortTerm: '', longTerm: '', idealNextRole: '' },
+      preferences: { remote: '', companySize: '', industry: [] },
+      starStories: [],
+      openQuestions: []
+    });
+    // The looked-up dimension_evidence row is itself heavy — this is the raw verbatim span that
+    // must never end up in ProfileInsight.evidence.
+    builder.first.mockResolvedValueOnce({ span: 'the raw heavy verbatim span', heavy: true });
+    builder.first.mockResolvedValueOnce(undefined); // getProfile (no existing profile)
+    builder.returning.mockResolvedValueOnce([profileFixture()]);
+
+    await service.generateProfile('user-1');
+
+    const insertedRow = builder.insert.mock.calls[0][0];
+    expect(insertedRow.profile_data.insights).toEqual([
+      {
+        id: 'pi-uuid-2',
+        category: 'tension',
+        statement: 'A narrative read, never a verbatim quote.',
+        evidence: 'A narrative read, never a verbatim quote.',
+        status: 'active',
+        heavy: true
+      }
+    ]);
+  });
 });
 
 describe('ProfileService.flagInsight', () => {

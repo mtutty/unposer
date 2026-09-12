@@ -286,7 +286,13 @@ describe('TopicConversationService', () => {
           { role: 'user', content: 'my answer' }
         ]
       });
-      expect(mockExtractAndPersist).toHaveBeenCalledWith('ex-user', question.prompt, 'my answer', Object.keys(question.dimensionLoads));
+      expect(mockExtractAndPersist).toHaveBeenCalledWith(
+        'ex-user',
+        question.prompt,
+        'my answer',
+        Object.keys(question.dimensionLoads),
+        question.heavy
+      );
       // §8 recruiter-visibility tagging (Iteration 8) — every indexed chunk carries which
       // question it came from and whether that question is on the never-verbatim-to-recruiters
       // list, so evidence.service.ts's search() can filter without knowing the question library.
@@ -373,7 +379,7 @@ describe('TopicConversationService', () => {
       expect(mockRunTopicTurn).toHaveBeenCalledWith(
         expect.objectContaining({ question: expect.objectContaining({ prompt: 'Say more about that call you made.', dimensionLoads: { dominance: 'P' } }) })
       );
-      expect(mockExtractAndPersist).toHaveBeenCalledWith('ex-user', 'Say more about that call you made.', 'my answer', ['dominance']);
+      expect(mockExtractAndPersist).toHaveBeenCalledWith('ex-user', 'Say more about that call you made.', 'my answer', ['dominance'], false);
     });
   });
 

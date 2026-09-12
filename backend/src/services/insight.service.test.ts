@@ -49,6 +49,7 @@ function evidenceRow(overrides: Partial<DimensionEvidence> = {}): DimensionEvide
     type: 'explicit_statement',
     facet: 'ideas',
     note: 'direct statement',
+    heavy: false,
     created_at: new Date(),
     ...overrides
   };
@@ -124,6 +125,25 @@ describe('InsightService.regenerate', () => {
       expect.objectContaining({ user_id: 'user-1', type: 'own_words', surfaced_to_user: true, surfaced_to_recruiter: false })
     ]);
     expect(result).toEqual([{ id: 'in-1', type: 'own_words', text: 'A vivid quote.' }]);
+  });
+
+  it('stamps insight.heavy true only when a supporting evidence id traces to a heavy dimension_evidence row', async () => {
+    builder.select
+      .mockResolvedValueOnce([scoreRow({ contributing_evidence_ids: ['ev1', 'ev2'] })])
+      .mockResolvedValueOnce([evidenceRow({ id: 'ev1', heavy: false }), evidenceRow({ id: 'ev2', heavy: true })]);
+    mockGenerateInsights.mockResolvedValueOnce([
+      { type: 'pattern', text: 'cites the non-heavy span', supportingDimensions: ['openness'], supportingEvidenceIds: ['ev1'] },
+      { type: 'tension', text: 'cites the heavy span', supportingDimensions: ['openness'], supportingEvidenceIds: ['ev2'] }
+    ]);
+    builder.delete.mockResolvedValueOnce(undefined);
+    builder.returning.mockResolvedValueOnce([]);
+
+    await service.regenerate('user-1');
+
+    expect(builder.insert).toHaveBeenCalledWith([
+      expect.objectContaining({ text: 'cites the non-heavy span', heavy: false }),
+      expect.objectContaining({ text: 'cites the heavy span', heavy: true })
+    ]);
   });
 
   it('skips the generator call entirely (and still clears prior insights) when nothing is eligible', async () => {

@@ -31,7 +31,14 @@ export interface DimensionSummaryInput {
    *  the one condition that makes a context_dependence insight legitimate. Ambiguous/other
    *  dimensions are never passed as context-dependence-eligible (§9.9: suppress it when unclear). */
   contextDependenceEligible: boolean;
-  evidence: Array<{ id: string; span: string; direction: 'low' | 'high'; note: string }>;
+  // heavy: from a Q5/Q6/Q19/Q20 question (spec §8's never-verbatim-to-recruiter set) — the
+  // prompt marks these spans RESTRICTED, and generateInsights below defensively drops any
+  // 'own_words' insight (the one type instructed to quote a span verbatim) that cites one,
+  // closing the gap noted in personality-engine-implementation-plan.md's Iteration 8 section:
+  // "an insight.evidence span could in principle be a verbatim quote... from a Q5/Q6/Q19/Q20
+  // answer." Other insight types may still draw on heavy evidence for narrative substance
+  // (their derived read, not the raw text, is exactly what spec §8 says is fine to use).
+  evidence: Array<{ id: string; span: string; direction: 'low' | 'high'; note: string; heavy: boolean }>;
 }
 
 export interface InsightGenerationInput {
@@ -65,7 +72,9 @@ export async function generateInsights(input: InsightGenerationInput): Promise<G
   const dimensionBlock = input.dimensions
     .map((d) => {
       const cfg = DIMENSION_CONFIGS[d.dimension];
-      const spans = d.evidence.map((e) => `    - [${e.id}] ("${e.span}") — ${e.note}`).join('\n');
+      const spans = d.evidence
+        .map((e) => `    - [${e.id}]${e.heavy ? ' [RESTRICTED]' : ''} ("${e.span}") — ${e.note}`)
+        .join('\n');
       return (
         `${d.dimension} (${cfg.name}): score ${d.score}/100 (0=${cfg.leftPole}, 100=${cfg.rightPole}), band ${d.band}` +
         (d.contextDependenceEligible ? ' — VARIES BY TOPIC (context-dependence eligible)' : '') +
@@ -97,10 +106,15 @@ export async function generateInsights(input: InsightGenerationInput): Promise<G
       'invent this for a dimension not marked that way.',
     '5. environment_implication — what kind of team/environment this profile tends to suit, framed ' +
       'as information for the person, never a verdict.',
-    "6. own_words — the two or three spans you found most revealing, quoted verbatim, with why.",
+    '6. own_words — the two or three spans you found most revealing, quoted verbatim, with why. ' +
+      'NEVER quote a span marked [RESTRICTED] verbatim for this type — skip it and pick from the ' +
+      'remaining spans instead.',
     '',
     'RULES:',
     '- Every insight cites at least one real evidence id from the list below — never invent an id.',
+    '- A [RESTRICTED] span may still inform any insight type\'s narrative substance (its derived ' +
+      'meaning, not its literal text) — only own_words\' verbatim-quote requirement is off-limits ' +
+      'for it.',
     '- Cap at 5-7 insights total. Fewer is fine if the data does not support more; twenty ' +
       'observations reads as a horoscope.',
     '- Falsifiability test: if an insight would feel true to 80% of readers, cut it. ' +
@@ -119,6 +133,7 @@ export async function generateInsights(input: InsightGenerationInput): Promise<G
 
   const validIds = new Set(input.dimensions.flatMap((d) => d.evidence.map((e) => e.id)));
   const validDimensions = eligibleKeys;
+  const heavyIds = new Set(input.dimensions.flatMap((d) => d.evidence.filter((e) => e.heavy).map((e) => e.id)));
 
   return result.insights
     .map((i) => ({
@@ -131,5 +146,11 @@ export async function generateInsights(input: InsightGenerationInput): Promise<G
       supportingEvidenceIds: i.supportingEvidenceIds.filter((id) => validIds.has(id))
     }))
     .filter((i) => i.supportingEvidenceIds.length > 0)
+    // Belt-and-suspenders on the prompt's own [RESTRICTED] instruction above: an own_words
+    // insight is the one type whose entire purpose is a verbatim quote, so if the model cited a
+    // heavy id there anyway, drop the insight outright rather than trust it didn't quote it —
+    // no other insight type is dropped for citing heavy evidence (see the type comment on
+    // DimensionSummaryInput.evidence for why that's intentional, not an oversight).
+    .filter((i) => i.type !== 'own_words' || !i.supportingEvidenceIds.some((id) => heavyIds.has(id)))
     .slice(0, 7);
 }

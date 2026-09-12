@@ -38,6 +38,11 @@ export class InsightService {
 
     const generated = dimensionInputs.length > 0 ? await generateInsights({ dimensions: dimensionInputs }) : [];
 
+    // Which evidence ids are heavy (Q5/Q6/Q19/Q20), regardless of which dimension surfaced them
+    // — used below to stamp insight.heavy so downstream consumers (profile.service.ts,
+    // evidence.service.ts) don't have to re-join dimension_evidence to find out.
+    const heavyIds = new Set(dimensionInputs.flatMap((d) => d.evidence.filter((e) => e.heavy).map((e) => e.id)));
+
     await db('insight').where({ user_id: userId }).delete();
     if (generated.length === 0) return [];
 
@@ -48,6 +53,7 @@ export class InsightService {
           type: g.type,
           text: g.text,
           supporting_evidence_ids: JSON.stringify(g.supportingEvidenceIds),
+          heavy: g.supportingEvidenceIds.some((id) => heavyIds.has(id)),
           // These become part of the candidate's own profile immediately (see profile.service.ts)
           // — surfaced_to_recruiter stays false until Iteration 8 builds the actual §8 guardrail
           // filter; nothing today reads this column for recruiter-facing rendering anyway.
@@ -78,7 +84,7 @@ export class InsightService {
 
   private async loadRepresentativeEvidence(
     evidenceIds: string[]
-  ): Promise<Array<{ id: string; span: string; direction: 'low' | 'high'; note: string }>> {
+  ): Promise<Array<{ id: string; span: string; direction: 'low' | 'high'; note: string; heavy: boolean }>> {
     if (evidenceIds.length === 0) return [];
 
     const rows: DimensionEvidence[] = await db('dimension_evidence').whereIn('id', evidenceIds).select('*');
@@ -88,6 +94,8 @@ export class InsightService {
       return rankB - rankA;
     });
 
-    return ranked.slice(0, MAX_EVIDENCE_PER_DIMENSION).map((r) => ({ id: r.id, span: r.span, direction: r.direction, note: r.note || '' }));
+    return ranked
+      .slice(0, MAX_EVIDENCE_PER_DIMENSION)
+      .map((r) => ({ id: r.id, span: r.span, direction: r.direction, note: r.note || '', heavy: r.heavy }));
   }
 }

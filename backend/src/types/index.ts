@@ -215,6 +215,12 @@ export interface ProfileInsight {
   statement: string;
   evidence: string;
   status: 'active' | 'flagged' | 'resolved';
+  // True only for a personality-engine-sourced insight drawing on a heavy (Q5/Q6/Q19/Q20)
+  // dimension_evidence span (see PersonalityInsight.heavy below) — undefined for the original
+  // five-category insights, which predate this tagging. Lets evidence.service.ts's
+  // indexDistilledProfile exclude the derived profile_evidence chunk from recruiter-audience
+  // retrieval (spec §8: "even via RAG retrieval") without re-deriving heaviness at read time.
+  heavy?: boolean;
 }
 
 export interface ProfileData {
@@ -380,6 +386,12 @@ export interface DimensionEvidence {
   // Facet-level tag, dimension-level score (spec §9.1, decided) — no facet scores in v1.
   facet: string | null;
   note: string | null;
+  // True when this span came from a heavy question (Q5/Q6/Q19/Q20 — spec §8's never-verbatim-
+  // to-recruiter set). Stamped at write time from LibraryQuestion.heavy (dimension-scoring.
+  // service.ts), the same source Iteration 8's RAG-chunk tagging already used — added later
+  // (see this column's own migration) to close the gap that left insight generation and
+  // profile_evidence with no way to know a span was restricted. Default false predates this.
+  heavy: boolean;
   created_at: Date;
 }
 
@@ -427,6 +439,9 @@ export interface PersonalityInsight {
   supporting_evidence_ids: string[];
   surfaced_to_user: boolean;
   surfaced_to_recruiter: boolean;
+  // True if any supporting_evidence_id traces back to a heavy dimension_evidence row — see that
+  // column's comment. Computed once at generation time (insight.service.ts).
+  heavy: boolean;
   created_at: Date;
   updated_at: Date;
 }
