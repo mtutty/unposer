@@ -52,11 +52,23 @@ const profileSchema = z.object({
   )
 });
 
+// Below this, a substring match against a heavy answer is too likely to be coincidental short
+// phrasing rather than an actual verbatim lift — long enough that a real quote is what's left.
+const MIN_QUOTE_CHECK_LENGTH = 25;
+
 export interface ProfileGenerationInput {
   resume: ResumeStructuredData | null;
   isCareerChanger: boolean;
   logistics: LogisticsData;
-  deepPromptTranscript: Array<{ role: 'user' | 'assistant'; content: string }>;
+  // heavy: whether this exchange came from a Q5/Q6/Q19/Q20 question (spec §8's never-verbatim-
+  // to-recruiter set) — see profile.service.ts, which looks it up from the question library via
+  // the message's own metadata.question_id. Closes a gap the personality-engine's own heavy
+  // guardrails (insight-generator.chain.ts, evidence.service.ts) never covered: this chain's own
+  // five-category insights read the *raw* transcript directly, with an `evidence` field asking
+  // for "the specific story or detail" behind each one — nothing stopped that detail from being
+  // a heavy answer quoted verbatim before this field existed. See the RESTRICTED marking and
+  // post-generation redaction below for the two-layer guardrail this enables.
+  deepPromptTranscript: Array<{ role: 'user' | 'assistant'; content: string; heavy: boolean }>;
   // Step 7 -> Step 6 feedback loop: corrections the candidate made after seeing their own profile
   // tested in the practice interview. Present only when regenerating off flagged sandbox gaps
   // (see ProfileService.applyGapCorrections) — treated as authoritative, not just more raw
@@ -85,7 +97,11 @@ export async function generateCandidateProfile(input: ProfileGenerationInput): P
     'conversation. Identify at least 3 distinct insights, each a narrative statement backed by ' +
     'cited evidence from the transcript or resume — never a bare number, letter grade, or scale ' +
     'position. Extract STAR (situation/task/action/result) stories directly from stories the ' +
-    'candidate told. ' +
+    'candidate told. Some candidate turns in the transcript below are marked [RESTRICTED] — you ' +
+    'may still use them to inform your holistic understanding of the candidate, but an insight\'s ' +
+    '`evidence` field must never quote a [RESTRICTED] turn\'s text directly or near-verbatim; ' +
+    'describe the narrative substance in your own words instead, or cite a different, ' +
+    'non-restricted moment. ' +
     (input.isCareerChanger
       ? 'This candidate is changing industries/roles — frame goals and work style around where ' +
         'they are headed, not just where they have been.'
@@ -109,7 +125,9 @@ export async function generateCandidateProfile(input: ProfileGenerationInput): P
     `Resume (structured): ${JSON.stringify(input.resume)}`,
     `Logistics/goals: ${JSON.stringify(input.logistics)}`,
     'Deep-prompt transcript:',
-    input.deepPromptTranscript.map((m) => `${m.role === 'user' ? 'Candidate' : 'Interviewer'}: ${m.content}`).join('\n'),
+    input.deepPromptTranscript
+      .map((m) => `${m.role === 'user' ? 'Candidate' : 'Interviewer'}${m.heavy ? ' [RESTRICTED]' : ''}: ${m.content}`)
+      .join('\n'),
     ...(input.corrections?.length
       ? [
           'Candidate corrections from the practice interview (authoritative):',
@@ -131,9 +149,27 @@ export async function generateCandidateProfile(input: ProfileGenerationInput): P
 
   const result = await structuredCall(profileSchema, system, human, 0.4);
 
+  // Belt-and-suspenders on the [RESTRICTED] prompt instruction above, same posture as
+  // insight-generator.chain.ts's own_words filter: this chain has no per-span id to check a
+  // citation against (its `evidence` field is freeform text, not a citation of a known list), so
+  // the structural check available here is substring matching against the actual heavy candidate
+  // answers rather than id membership. Redacts only the `evidence` field (the one asked to quote
+  // "the specific story or detail") — `statement` is a narrative sentence about the candidate,
+  // not a quote of them, and isn't checked.
+  const heavyAnswers = input.deepPromptTranscript
+    .filter((m) => m.role === 'user' && m.heavy)
+    .map((m) => m.content.toLowerCase())
+    .filter((c) => c.length >= MIN_QUOTE_CHECK_LENGTH);
+
   return {
     ...result,
-    insights: result.insights.map((i) => ({ ...i, status: 'active' as const })),
+    insights: result.insights.map((i) => {
+      const evidenceLower = i.evidence.toLowerCase();
+      const quotesHeavyAnswer =
+        evidenceLower.length >= MIN_QUOTE_CHECK_LENGTH &&
+        heavyAnswers.some((answer) => answer.includes(evidenceLower) || evidenceLower.includes(answer));
+      return { ...i, evidence: quotesHeavyAnswer ? i.statement : i.evidence, status: 'active' as const };
+    }),
     openQuestions: []
   };
 }

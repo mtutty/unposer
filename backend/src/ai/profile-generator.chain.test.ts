@@ -40,7 +40,7 @@ describe('generateCandidateProfile', () => {
       baseInput({
         resume: { summary: 'Backend engineer' } as any,
         logistics: { targetRole: 'staff engineer' } as any,
-        deepPromptTranscript: [{ role: 'user', content: 'I led a rewrite once.' }]
+        deepPromptTranscript: [{ role: 'user', content: 'I led a rewrite once.', heavy: false }]
       })
     );
 
@@ -123,5 +123,65 @@ describe('generateCandidateProfile', () => {
       { id: 'i2', category: 'growth_area', statement: 'B', evidence: 'ev', status: 'active' }
     ]);
     expect(result.openQuestions).toEqual([]);
+  });
+
+  it('marks a heavy transcript turn RESTRICTED and instructs the model never to quote it verbatim', async () => {
+    mockStructuredCall.mockResolvedValue(stubResult());
+
+    await generateCandidateProfile(
+      baseInput({
+        deepPromptTranscript: [
+          { role: 'assistant', content: 'What happened when it all fell apart?', heavy: true },
+          { role: 'user', content: 'I froze for a moment, then called my manager.', heavy: true },
+          { role: 'user', content: 'I enjoy pairing on hard problems.', heavy: false }
+        ]
+      })
+    );
+
+    const [, system, human] = mockStructuredCall.mock.calls[0];
+    expect(system).toMatch(/never quote a \[RESTRICTED\] turn's text directly or near-verbatim/);
+    expect(human).toContain('Interviewer [RESTRICTED]: What happened when it all fell apart?');
+    expect(human).toContain('Candidate [RESTRICTED]: I froze for a moment, then called my manager.');
+    expect(human).toContain('Candidate: I enjoy pairing on hard problems.');
+  });
+
+  it('redacts an insight\'s evidence field to its own statement when it verbatim-quotes a heavy answer, but leaves a non-heavy quote alone', async () => {
+    const heavyAnswer = 'I completely broke down and could not speak for several minutes in the meeting.';
+    mockStructuredCall.mockResolvedValue(
+      stubResult({
+        insights: [
+          { id: 'i1', category: 'stress_response', statement: 'Struggles under acute pressure.', evidence: heavyAnswer },
+          { id: 'i2', category: 'collaboration', statement: 'Seeks out pairing.', evidence: 'Mentioned enjoying pairing on hard problems regularly.' }
+        ]
+      })
+    );
+
+    const result = await generateCandidateProfile(
+      baseInput({
+        deepPromptTranscript: [
+          { role: 'user', content: heavyAnswer, heavy: true },
+          { role: 'user', content: 'Mentioned enjoying pairing on hard problems regularly.', heavy: false }
+        ]
+      })
+    );
+
+    expect(result.insights[0].evidence).toBe('Struggles under acute pressure.');
+    expect(result.insights[1].evidence).toBe('Mentioned enjoying pairing on hard problems regularly.');
+  });
+
+  it('does not redact a short evidence string even if it happens to be a substring of a heavy answer', async () => {
+    mockStructuredCall.mockResolvedValue(
+      stubResult({
+        insights: [{ id: 'i1', category: 'strength', statement: 'Calm under pressure.', evidence: 'stayed calm' }]
+      })
+    );
+
+    const result = await generateCandidateProfile(
+      baseInput({
+        deepPromptTranscript: [{ role: 'user', content: 'I stayed calm even though everyone else panicked.', heavy: true }]
+      })
+    );
+
+    expect(result.insights[0].evidence).toBe('stayed calm');
   });
 });

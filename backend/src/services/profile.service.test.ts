@@ -138,8 +138,8 @@ describe('ProfileService.generateProfile', () => {
     expect(mockGenerateCandidateProfile).toHaveBeenCalledWith(
       expect.objectContaining({
         deepPromptTranscript: [
-          { role: 'assistant', content: 'Q?' },
-          { role: 'user', content: 'A.' }
+          { role: 'assistant', content: 'Q?', heavy: false },
+          { role: 'user', content: 'A.', heavy: false }
         ],
         personalityInsights: [{ type: 'own_words', text: 'A vivid quote.' }]
       })
@@ -156,6 +156,46 @@ describe('ProfileService.generateProfile', () => {
     expect(JSON.parse(insertedRow.correction_log)).toEqual([]);
     expect(mockRegenerateCultureSignal).toHaveBeenCalledWith('user-1');
     expect(result).toEqual(inserted);
+  });
+
+  it('looks up each transcript message\'s heavy flag from the question library via metadata.question_id', async () => {
+    builder.first
+      .mockResolvedValueOnce({ confirmed: true, structured_data: {}, is_career_changer: false }) // resumes
+      .mockResolvedValueOnce({ data: {} }); // logistics_responses
+    mockGetTier.mockResolvedValueOnce('sketch');
+    mockGetFullTranscript.mockResolvedValueOnce([
+      { id: 'ex-1', role: 'assistant', content: 'heavy question', thread_id: 't', user_id: 'user-1', channel: 'app', step: 'deep_prompts', metadata: { question_id: 'Q5' }, created_at: new Date() },
+      { id: 'ex-2', role: 'user', content: 'heavy answer', thread_id: 't', user_id: 'user-1', channel: 'app', step: 'deep_prompts', metadata: { question_id: 'Q5' }, created_at: new Date() },
+      { id: 'ex-3', role: 'assistant', content: 'light question', thread_id: 't2', user_id: 'user-1', channel: 'app', step: 'deep_prompts', metadata: { question_id: 'Q0' }, created_at: new Date() },
+      { id: 'ex-4', role: 'assistant', content: 'ad hoc re-ask', thread_id: 't3', user_id: 'user-1', channel: 'app', step: 'deep_prompts', metadata: { question_id: 'reask-abc' }, created_at: new Date() }
+    ]);
+    mockRegenerateInsights.mockResolvedValueOnce([]);
+    mockGenerateCandidateProfile.mockResolvedValueOnce({
+      headline: 'h',
+      summary: 's',
+      workHistory: [],
+      insights: [],
+      workStyle: { preferredEnvironment: '', teamDynamics: '', communicationStyle: '' },
+      goals: { shortTerm: '', longTerm: '', idealNextRole: '' },
+      preferences: { remote: '', companySize: '', industry: [] },
+      starStories: [],
+      openQuestions: []
+    });
+    builder.first.mockResolvedValueOnce(undefined); // getProfile (no existing profile)
+    builder.returning.mockResolvedValueOnce([profileFixture()]);
+
+    await service.generateProfile('user-1');
+
+    expect(mockGenerateCandidateProfile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deepPromptTranscript: [
+          { role: 'assistant', content: 'heavy question', heavy: true },
+          { role: 'user', content: 'heavy answer', heavy: true },
+          { role: 'assistant', content: 'light question', heavy: false },
+          { role: 'assistant', content: 'ad hoc re-ask', heavy: false } // question_id not in the library -> not heavy
+        ]
+      })
+    );
   });
 
   it('never uses a heavy dimension_evidence span verbatim as a personality insight\'s evidence field, falling back to its own narrative text', async () => {

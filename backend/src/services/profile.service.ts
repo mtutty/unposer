@@ -2,6 +2,7 @@ import { db } from '../db/connection';
 import { AppError, CandidateProfile, DimensionKey, PersonalityInsight, ProfileInsight } from '../types';
 import { generateCandidateProfile, ProfileGenerationInput } from '../ai/profile-generator.chain';
 import { generateReaskQuestion } from '../ai/reask.chain';
+import { getQuestion } from '../models/question-library';
 import { TopicConversationService } from './topic-conversation.service';
 import { ProgressionService } from './progression.service';
 import { InsightService } from './insight.service';
@@ -77,9 +78,15 @@ export class ProfileService {
       resume: resume.structured_data,
       isCareerChanger: resume.is_career_changer,
       logistics: logistics?.data || {},
+      // heavy: looked up per-exchange from the question library via the message's own
+      // metadata.question_id — an ad hoc (re-ask) thread's question_id resolves to no library
+      // entry, so getQuestion returns undefined and it's treated as non-heavy, same as
+      // TopicConversationService.resolveQuestion's own synthetic-question default. Closes the
+      // gap noted on ProfileGenerationInput.deepPromptTranscript's own type comment.
       deepPromptTranscript: deepPromptTranscript.map((m) => ({
         role: m.role as 'user' | 'assistant',
-        content: m.content
+        content: m.content,
+        heavy: getQuestion(m.metadata?.question_id)?.heavy ?? false
       })),
       corrections,
       personalityInsights: personalityInsights.map((pi) => ({ type: pi.type, text: pi.text }))
