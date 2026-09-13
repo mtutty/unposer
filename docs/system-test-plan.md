@@ -6,7 +6,10 @@ flow (`docs/onboarding-ux-flow-spec.md`) plus the personality engine layered on 
 (`docs/personality-analysis-engine-spec.md`, `docs/personality-engine-flow-addendum.md`). Written
 for a human tester exercising the app through the browser and a few scripted checks, not a set of
 automated assertions — those already exist (`backend: npm test`, `frontend: npm run test:ci`,
-`.github/workflows/ci.yml`) and are out of scope here except where noted.*
+`.github/workflows/ci.yml`) and are out of scope here except where noted. Candidate-side only —
+the employer-side workstream (`docs/employer-onboarding-spec.md`) has its own "Verified live"
+notes per phase in `docs/employer-onboarding-implementation-plan.md` rather than a walkthrough
+here.*
 
 **How to use this doc:** work top to bottom on a fresh `docker-compose up -d`. Each section is a
 walkthrough with concrete steps and a "what you should see" line, not just a checkbox — reread the
@@ -375,8 +378,13 @@ Don't file these as bugs — they're documented decisions, not oversights:
   aren't configured.
 - **Step 6.5 "Career Debrief"** — proposed, not built. Its market-data half is a hard block
   pending a real external data source (see `docs/labor-market-data-source-catalog.md`).
-- **Employer-side onboarding, matching/discovery, share-link analytics** — out of scope for v1 per
-  the onboarding spec's Future Features section.
+- **Employer-side onboarding** — no longer out of scope: Phases 1-3 (requisition CRUD, Q&A,
+  candidate search) are built, per `docs/employer-onboarding-spec.md`/
+  `docs/employer-onboarding-implementation-plan.md` — just outside this doc's own candidate-only
+  scope (see the intro above). Virtual interviews and batch scoring (Phases 4-5) remain unbuilt,
+  each blocked on its own flagged decision.
+- **Candidate matching/discovery beyond employer search, share-link analytics** — out of scope
+  for v1 per the onboarding spec's Future Features section.
 
 ---
 

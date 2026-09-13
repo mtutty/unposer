@@ -1,6 +1,11 @@
 # Job Seeker Onboarding & UX Flow — Spec for Prototyping
 
-*Status: Design-locked for v1 prototype. Employer-side flow, matching/discovery mechanism, and long-term re-engagement are explicitly out of scope for this document (see Future Features).*
+*Status: Design-locked for v1 prototype. Employer-side flow and matching/discovery mechanism are
+explicitly out of scope for this document (see Future Features) — though the employer side is now
+designed and partly built elsewhere, see that section. Long-term re-engagement (weekly check-in
+cadence, pace/pause/unsubscribe, dormancy) was also out of scope here but has since been designed
+and built as part of the personality engine — see `docs/personality-analysis-engine-spec.md` §3.5
+and `docs/personality-engine-implementation-plan.md` Iteration 9.*
 
 *Revision note (2026-08-08): the rail-facing IA was collapsed from 6 steps to 2 stages — "Tell Your Story" and "Interview Yourself" — per product direction. This is a presentation change, not a data-model change: the 6 steps below (and their distinct completion criteria, data tables, and channel rules) are unchanged and still the unit of progress tracking. See "Stages vs. Steps" below.*
 
@@ -204,12 +209,21 @@ The user chats with their own RAG-backed profile as if they were a recruiter or 
 
 ## Future Features (explicitly deferred, not designed here)
 
-- Employer-side onboarding flow (mirrors the job-seeker flow but needs its own structured-elicitation design per the culture-matching research — employers won't self-report honestly, so this needs trade-off/critical-incident questions, not "describe your culture").
-- Matching/discovery mechanism beyond the passive share-link model (system-driven recommendations, recruiter search, etc.).
+- ~~Employer-side onboarding flow~~ — no longer just deferred: designed and being built in
+  `docs/employer-onboarding-spec.md` (its own structured-elicitation shape, per the concern
+  raised here about employers not self-reporting honestly — see that spec's §4). Phases 1-3
+  (requisition CRUD, org/situational/cultural Q&A, basic candidate search) are done; Phases 4-5
+  (virtual interview, batch scoring) remain unbuilt, each blocked on its own flagged decision.
+- Matching/discovery mechanism beyond the passive share-link model and employer search's basic
+  filters (system-driven recommendations, etc.).
 - Full transparency view in Step 6 (showing *why* the AI inferred something).
 - Granular share-link controls (per-recruiter visibility settings).
 - Link analytics (views, questions asked) surfaced back to the user.
-- Profile staleness/refresh and long-term re-engagement.
+- Profile staleness/refresh (re-scoring an existing profile over time as new evidence accumulates
+  past its original approval). Long-term *re-engagement* itself — the weekly check-in cadence,
+  pace/pause/unsubscribe, dormancy — is no longer deferred: built per
+  `docs/personality-analysis-engine-spec.md` §3.5, see
+  `docs/personality-engine-implementation-plan.md` Iteration 9.
 - **Market/compensation intelligence** (industry trends, salary comparisons, comparisons to alternate paths — different location, vertical market, lateral moves): the content half of Step 6.5 above. Blocked on selecting and integrating a real external data source (compensation-data API, labor-market-trends source, etc.) — not scoped here, and explicitly not to be approximated via LLM parametric knowledge in the meantime.
 
 ---

@@ -158,7 +158,7 @@ Frontend reads step *and stage* definitions from `/api/flow/steps` and renders t
 
 A parallel, independent workstream on top of the same `users`/auth model — see
 `docs/employer-onboarding-spec.md` (design, phased) and
-`docs/employer-onboarding-implementation-plan.md` (status tracker). **Phases 1–2 are built:**
+`docs/employer-onboarding-implementation-plan.md` (status tracker). **Phases 1–3 are built:**
 - **Phase 1** — a new `'employer'` role (invite-only, same `invited`/`invited_role` mechanism as
   the existing `'invited'` role — see Security Notes below) and plain CRUD over a new
   `job_requisitions` table (`RequisitionService`, `POST/GET /api/requisitions`,
@@ -178,9 +178,22 @@ A parallel, independent workstream on top of the same `users`/auth model — see
   `requisition_culture_signal` table: `culture_signal` specifically means "a candidate's *former*
   employer's culture, inferred indirectly," a different provenance than an employer describing
   their *current* team directly, so the two are never blended into one table.
+- **Phase 3** — basic candidate search on commodity filters (spec §5). Opt-in only: a candidate
+  never becomes searchable by any other action (a share link, a progression tier, step
+  completion) — `candidate_profiles.discoverable`, set via `ShareService.setDiscoverable`
+  (`GET/PATCH /api/share/discoverable`, surfaced as a toggle on the candidate's Share step),
+  gated on the same Core-persona-or-later tier `createLink` already requires when turning it *on*
+  (never gated turning it off). `CandidateSearchService.search` (`GET /api/employer/search`,
+  `requireEmployer`) filters `discoverable=true AND status='approved'` profiles on role/location
+  (ILIKE substring) and remote preference (exact match against a `search_remote` column —
+  `'remote'|'hybrid'|'onsite'|null`, a plain keyword regex over the candidate's own free-text
+  location answer via `utils/search-normalize.ts`, not an LLM call), limit/offset paginated.
+  Result rows are a narrow public-safe projection (headline/role/location/remote only) — the same
+  recruiter-facing guardrail posture as the personality spec's §8. Surfaced at
+  `/employer/search` (`features/employer/candidate-search.component.ts`).
 
-Nothing else in this workstream (search, virtual interviews, batch scoring — Phases 3–5) exists
-yet, each blocked on its own flagged product decision in the spec.
+Nothing else in this workstream (virtual interviews, batch scoring — Phases 4–5) exists yet, each
+blocked on its own flagged product decision in the spec.
 
 ## Streaming Chat (SSE)
 
@@ -342,7 +355,7 @@ This is handled by `backend/docker-entrypoint.sh`
 - [x] ~~Add OIDC provider integration~~ — Google and GitHub are both done, same shared route pattern (`registerOidcRoutes` in `backend/src/routes/auth.routes.ts`) and shared user upsert (`upsertOidcUser` in `services/auth.service.ts`). Google goes through `google-auth-library`'s `OAuth2Client` (ID-token signature verification); GitHub is plain OAuth2 (no ID token to verify) hand-rolled with a couple of `fetch` calls to `github.com`/`api.github.com`. Redirect URIs are derived from `FRONTEND_URL`, not separate config — see `.env.template`. LinkedIn still not implemented — the test-login bypass remains the only working path for that
 - [x] ~~Real email delivery for the Step 3 email channel~~ — done via Resend; see the "Email gateway (real, via Resend)" note above
 - [x] ~~Scheduled nudges for stalled email threads~~ — `logistics-nudge-scheduler.service.ts`/`.cron.ts` proactively check the Step 3 (logistics) email thread against `InboxService`'s existing `threadNeedsNudge` predicate (shared with the in-app manual-nudge indicator, so the two paths can't disagree) and call the same `sendNudge` the on-demand path already used. Its own cron cadence (`LOGISTICS_NUDGE_CRON`, default hourly) but the same `SCHEDULER_ENABLED` master switch as Iteration 9's weekly scheduler below — a different mechanism from that one (this covers Step 3's `conversation_threads`/hours-of-silence; Iteration 9 covers Step 5's `topic_thread`/weeks), don't conflate the two
-- [ ] Employer-side onboarding, matching/discovery, share-link analytics — explicitly out of scope for v1 per the spec's Future Features section
+- [x] ~~Employer-side onboarding~~ — Phases 1-3 built (requisition CRUD, org/situational/cultural Q&A, basic candidate search); see "Employer-Side Onboarding" above. Phases 4-5 (virtual interview, batch scoring) and candidate matching/discovery beyond employer search's basic filters remain out of scope, each blocked on its own flagged decision in the spec — share-link analytics likewise stays explicitly out of scope per the onboarding spec's Future Features section
 - [ ] **Not yet implemented:** Step 6.5 "Career Debrief" — a conversational coaching step between profile approval and the practice interview (environment fit, interview-facing strengths/blind spots, work-style takeaways). Proposed, not design-locked; see spec doc's Step 6.5 section for full scope, including a proposed 3rd rail stage ("Understand Yourself") that would move `profile_review` out of "Interview Yourself". Its industry-trends/salary-comparison half is a **hard block** until a real external market-data source is chosen — no chain may freehand salary/trend figures from LLM parametric knowledge in the meantime.
 
 ## Documentation

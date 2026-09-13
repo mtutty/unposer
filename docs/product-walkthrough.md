@@ -2,16 +2,17 @@
 
 *A guided tour for anyone getting oriented on the product: what screen you're on, what it's for,
 what you do there, and where it sends you next. This is the "show me around" companion to
-`docs/system-test-plan.md` (which is written for verifying things work) and
-`docs/onboarding-ux-flow-spec.md` (which is the locked design spec) — read this one first if
-you're new.*
+`docs/system-test-plan.md` (which is written for verifying things work), `docs/onboarding-ux-
+flow-spec.md` (the candidate side's locked design spec), and `docs/employer-onboarding-spec.md`
+(the employer side's, still under active build) — read this one first if you're new.*
 
-There are three people who use this product, and each has their own small set of screens:
+There are four people who use this product, and each has their own small set of screens:
 
 | Who | What they're doing | Screens |
 |---|---|---|
 | **Candidate** | Builds their career profile through a guided conversation | Login → Dashboard → the 6-step flow below |
 | **Recruiter** | Reads a candidate's profile and chats with it | One screen — the public share link |
+| **Employer** | Posts a role, describes it, and searches for candidates | `/employer/requisitions` → a requisition's Q&A → `/employer/search` |
 | **Admin** | Manages accounts | One screen — `/admin/users` |
 
 The candidate journey is the bulk of the product and the bulk of this doc. It's presented as **two
@@ -232,6 +233,32 @@ that has to come from a different admin account, so nobody can accidentally lock
 There's a designed-but-not-built **calibration console** (for eventually reviewing/rating how well
 the system's scoring matches reality) — if you're looking for it and don't find it, that's expected
 for now, not a bug.
+
+---
+
+## 13. The employer screens — a separate, independent workstream
+
+*See `docs/employer-onboarding-spec.md` for the full design and `docs/employer-onboarding-
+implementation-plan.md` for build status. An `'employer'` account is invite-only, same as an
+admin invite but targeting this role — there's no self-service path onto it.*
+
+**Requisitions (`/employer/requisitions`)** — list a role's own job requisitions, plus a "new
+requisition" form (title/description/requirements, free text). Deliberately plain/utilitarian,
+same as the admin screen — this isn't part of the candidate-facing "notebook" design.
+
+**A requisition's own page (`/employer/requisitions/:id`)** — while a requisition is still
+`draft`, its fields are editable and a live chat asks about the team, a recent challenge, and how
+the team actually works (5-20 minutes, one sitting — no email option, unlike the candidate side).
+Finishing that chat flips the requisition to `active` and locks the fields; from then on this page
+shows the Q&A as a read-only transcript instead.
+
+**Search candidates (`/employer/search`)** — filters (target role, location, remote preference)
+over candidates who've explicitly opted in to being discoverable. A search result is deliberately
+thin — headline, role, location, remote preference, nothing more — there's no way yet to view a
+candidate's full profile or start a conversation with them from here; that's a later phase
+("short 1:1 virtual interview," not yet built). Most candidates never show up here at all: opting
+in is a candidate's own choice from their Share step, off by default, and only available once
+their profile has real depth (the same bar that gates generating a share link).
 
 ---
 
