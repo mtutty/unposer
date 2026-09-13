@@ -88,9 +88,9 @@ export const config = {
     // dev (docker-compose.override.yml mounts the whole tree), so spooled mail shows up directly
     // on the host at backend/email-outbox/ without any extra volume wiring.
     spoolDir: process.env.EMAIL_SPOOL_DIR || '/app/email-outbox',
-    // Public "ask us anything" address surfaced on /how-your-profile-works (contact@unposer.com,
-    // not the reply subdomain above — a candidate/recruiter reading that page should never see
-    // the technical inbound domain). Requires its own domain verified for *receiving* in Resend
+    // Public "ask us anything" address surfaced on /how-your-profile-works (contact@my.unposer.com
+    // — its own subdomain, distinct from the reply.* one above so the token pipeline and this one
+    // never share a domain). Requires that subdomain verified for *receiving* in Resend
     // (see infra/README.md's "Contact address forwarding" section) — same webhook endpoint as
     // the reply+token flow, routed by recipient address rather than a token. Forwards verbatim to
     // contactForwardTo rather than entering ConversationService; there's no thread, no user, no

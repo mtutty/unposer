@@ -119,7 +119,7 @@ const SECTIONS: FaqSection[] = [
       },
       {
         q: 'Is that distinction just an excuse to hide things?',
-        a: 'It\'s a testable claim, and you\'re welcome to test it: if any answer on this page reads as evasive rather than as "this specific number would only be useful for gaming it," that\'s a bug in the page, not an intentional gap. Want to know more? Email us your questions — <a href="mailto:contact@unposer.com">contact@unposer.com</a>.'
+        a: 'It\'s a testable claim, and you\'re welcome to test it: if any answer on this page reads as evasive rather than as "this specific number would only be useful for gaming it," that\'s a bug in the page, not an intentional gap. Want to know more? Email us your questions — <a href="mailto:contact@my.unposer.com">contact@my.unposer.com</a>.'
       }
     ]
   },

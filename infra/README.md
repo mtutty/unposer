@@ -139,23 +139,23 @@ dedupe testing.
 
 ## Contact address forwarding
 
-`/how-your-profile-works` links `contact@unposer.com` for general questions —
-separate from the reply+token pipeline above, and forwarded to a real inbox
-rather than entering any onboarding flow (`EmailService.forwardContactMessage`,
-routed by exact recipient address in `webhooks.routes.ts` before the
-reply+token pattern is even checked). Setup:
+`/how-your-profile-works` links `contact@my.unposer.com` for general
+questions — separate from the reply+token pipeline above, and forwarded to a
+real inbox rather than entering any onboarding flow
+(`EmailService.forwardContactMessage`, routed by exact recipient address in
+`webhooks.routes.ts` before the reply+token pattern is even checked). Setup:
 
-1. In Resend, verify `unposer.com` itself (the main domain, not
-   `EMAIL_INBOUND_DOMAIN`'s reply subdomain) for **receiving**, and add its MX
-   record at your DNS provider — Resend supports multiple verified domains,
-   so this is additive to the existing `reply.unposer.com` setup, not a
+1. In Resend, verify `my.unposer.com` for **receiving**, and add its MX
+   record at your DNS provider — its own subdomain, kept separate from both
+   `DOMAIN_NAME` and `EMAIL_INBOUND_DOMAIN`'s `reply.unposer.com`. Resend
+   supports multiple verified domains, so this is additive, not a
    replacement.
 2. The `email.received` webhook created above already covers this — inbound
    mail from any verified domain lands on the same
    `/api/webhooks/inbound-email` endpoint, and the route dispatches on the
    recipient address. No second webhook needed.
 3. Set in `.env`:
-   - `CONTACT_EMAIL_ADDRESS` — `contact@unposer.com`.
+   - `CONTACT_EMAIL_ADDRESS` — `contact@my.unposer.com`.
    - `CONTACT_FORWARD_TO` — the real mailbox that should receive these
      (e.g. the address you actually check day to day).
 

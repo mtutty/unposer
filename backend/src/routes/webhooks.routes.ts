@@ -93,7 +93,7 @@ router.post('/inbound-email', async (req, res) => {
 
   try {
     // Contact-address forwarding (config.email.contactAddress/contactForwardTo) — a fixed
-    // address on the main domain (e.g. contact@unposer.com), not a per-thread reply+token
+    // address on its own subdomain (contact@my.unposer.com), not a per-thread reply+token
     // address, so it's checked by exact recipient match before the token pattern below rather
     // than folded into it. No thread lookup, no ConversationService: this is a real question
     // going straight to a real inbox, not conversation input.
