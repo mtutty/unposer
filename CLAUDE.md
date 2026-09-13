@@ -182,6 +182,10 @@ yet, each blocked on its own flagged product decision in the spec.
 
 ## Streaming Chat (SSE)
 
+**Backend done, frontend not yet migrated** — see `docs/websocket-to-sse-migration-plan.md` for
+the frontend task list (still on the old `WebSocketService`/`ws?step=...` transport as of this
+writing; every chat surface is broken in the running app until that iteration lands).
+
 **No WebSocket in this app any more** — `backend/src/websocket/server.ts` was removed (2026-09).
 Every chat surface (candidate logistics/deep_prompts, employer requisition Q&A, and
 sandbox/share/future virtual-interview chat) now speaks one interaction model: plain `POST`,
