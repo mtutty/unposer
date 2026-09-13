@@ -16,6 +16,7 @@ import { EmployerRequisitionDetailComponent } from './features/employer/employer
 import { CandidateSearchComponent } from './features/employer/candidate-search.component';
 import { ScheduleSettingsComponent } from './features/schedule/schedule-settings.component';
 import { HowItWorksComponent } from './features/how-it-works/how-it-works.component';
+import { DataTransparencyComponent } from './features/data-transparency/data-transparency.component';
 import { PendingApprovalComponent } from './features/pending/pending-approval.component';
 import { authGuard, guestGuard, adminGuard, employerGuard, pendingGuard } from './core/auth/auth.guard';
 
@@ -25,6 +26,7 @@ export const routes: Routes = [
   { path: '', redirectTo: '/login', pathMatch: 'full' },
   { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
   { path: 'how-it-works', component: HowItWorksComponent },
+  { path: 'how-your-profile-works', component: DataTransparencyComponent },
   { path: 'pending', component: PendingApprovalComponent, canActivate: [pendingGuard] },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'admin/users', component: AdminUsersComponent, canActivate: [adminGuard] },

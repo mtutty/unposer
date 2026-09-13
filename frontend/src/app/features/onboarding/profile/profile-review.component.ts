@@ -50,7 +50,10 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
         </div>
 
         <h3 class="section-title">What we picked up on</h3>
-        <p class="meta">Inferred from your stories — never from a rating. Flag anything that doesn't sound like you.</p>
+        <p class="meta">
+          Inferred from your stories — never from a rating. Flag anything that doesn't sound like you.
+          <a routerLink="/how-your-profile-works">How this works</a>
+        </p>
         <div class="insight-list">
           @for (insight of p.profile_data.insights; track insight.id) {
             <div class="card insight" [class.flagged]="insight.status === 'flagged'">

@@ -17,6 +17,7 @@ import { Router, RouterLink, RouterLinkActive } from '@angular/router';
       </a>
       <nav class="links">
         <a routerLink="/how-it-works" routerLinkActive="active" class="link">How it Works</a>
+        <a routerLink="/how-your-profile-works" routerLinkActive="active" class="link">Data & Analysis</a>
         <a routerLink="/login" class="btn btn-on-cover" (click)="onSignIn($event)">Sign in</a>
       </nav>
     </header>
