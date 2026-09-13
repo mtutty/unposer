@@ -10,9 +10,10 @@ resumption point for building a real, authenticated employer side on top of that
 **Status:** Design spec for build, phased. Written per Michael's direction: go broad (seeker +
 recruiter) before deep (career planning, job stats — see
 `docs/labor-market-data-source-catalog.md`, deprioritized), and skip the calibration console for
-now (`docs/calibration-console-spec.md`, already spec'd-not-built) in favor of this. **Phase 1 is
-built** — see `docs/employer-onboarding-implementation-plan.md` for status/deviations; the
-role-assignment question in §2.1 was resolved as invite-only.
+now (`docs/calibration-console-spec.md`, already spec'd-not-built) in favor of this. **Phases 1-2
+are built, Phase 3 in progress** — see `docs/employer-onboarding-implementation-plan.md` for
+status/deviations; the role-assignment question in §2.1 was resolved as invite-only, §5's
+discoverability question as an opt-in flag.
 
 ---
 
@@ -294,11 +295,12 @@ resolutions, neither implemented, both requiring a real product decision before 
   the sense implied by the phase description (finding candidates you don't already have a link
   to).
 
-**Recommendation, not a decision:** the opt-in flag is very likely the right shape given every
-other privacy-conscious pattern already established in this codebase (candidate-controlled share
-links, no analytics on them "by design, see spec," `docs/personality-analysis-engine-spec.md`
-§8's recruiter guardrails) — but it's a real product call, not an engineering one, and should be
-confirmed before Phase 3 begins rather than assumed silently.
+**Decided (2026-09-13):** the opt-in discoverability flag — consistent with every other
+privacy-conscious pattern already established in this codebase (candidate-controlled share links,
+no analytics on them "by design, see spec," `docs/personality-analysis-engine-spec.md` §8's
+recruiter guardrails). A candidate is discoverable in employer search if and only if they've
+explicitly turned it on; nothing about generating a share link, reaching a given progression tier,
+or completing any step implies discoverability on its own.
 
 ### Data model (once the discoverability question is resolved)
 

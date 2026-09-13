@@ -21,7 +21,7 @@ it tracks against, and pick up exactly where the last phase left off. Mirrors th
 |---|---|---|---|
 | 1 | Post a job requisition | ✅ Done | Employer role + `job_requisitions` CRUD, no AI |
 | 2 | Org/situational/cultural Q&A | ✅ Done | Live-chat elicitation + shared-vocabulary culture signal |
-| 3 | Basic candidate search | ⬜ Not started | Blocked: discoverability opt-in decision (spec §5) |
+| 3 | Basic candidate search | 🟨 In progress | Decided (2026-09-13): opt-in `discoverable` flag (spec §5) |
 | 4 | Short 1:1 virtual interview | ⬜ Not started | Blocked: consent-to-interview decision (spec §6) |
 | 5 | Batch interview + scoring/comparison | ⬜ Not started | Blocked: fixed vs. adaptive question set (spec §7) |
 
@@ -125,7 +125,9 @@ above); everything else matches the spec's sketch.
 
 ## Phase 3 — Basic candidate search
 
-Not started. Blocked on the discoverability opt-in decision (spec §5) — what makes a candidate
-visible to employer search at all. Spec's own recommendation: an opt-in
-`candidate_profiles.discoverable` flag, but flagged as a real product call to confirm before
-starting, not an engineering one to assume.
+**Depends on:** nothing new on the candidate side beyond what's already built. **Decided before
+starting:** discoverability (2026-09-13, spec §5) — opt-in `candidate_profiles.discoverable`
+flag, default `false`. A candidate is searchable if and only if they've explicitly turned it on;
+no other action (a share link, a progression tier, step completion) implies it.
+
+In progress — see the commit(s) landing this section for what was actually built.
