@@ -545,6 +545,42 @@ export interface JobRequisition {
   updated_at: Date;
 }
 
+// Phase 2 — org/situational/cultural Q&A (spec §4). One thread per requisition (not per
+// user+step the way ThreadStep is), always app-channel — see the migration's own comment.
+export type RequisitionThreadStatus = 'active' | 'complete';
+
+export interface RequisitionThread {
+  id: string;
+  requisition_id: string;
+  status: RequisitionThreadStatus;
+  message_count: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface RequisitionMessage {
+  id: string;
+  thread_id: string;
+  requisition_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  metadata: Record<string, any>;
+  created_at: Date;
+}
+
+// The employer-side half of the CVF-quadrant decision (spec §4, 2026-09-12) — same CvfQuadrant
+// vocabulary as CultureSignal above, deliberately a separate table/type: this is an employer's
+// own team culture, described directly, not inferred indirectly the way a candidate's
+// former-employer signal is. See requisition_culture_signal's migration.
+export interface RequisitionCultureSignal {
+  id: string;
+  requisition_id: string;
+  cvf_quadrant: CvfQuadrant;
+  source_message_ids: string[];
+  created_at: Date;
+  updated_at: Date;
+}
+
 export class AppError extends Error {
   constructor(
     public code: string,

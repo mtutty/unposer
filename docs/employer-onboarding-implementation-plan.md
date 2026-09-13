@@ -20,7 +20,7 @@ it tracks against, and pick up exactly where the last phase left off. Mirrors th
 | # | Phase | Status | One-line goal |
 |---|---|---|---|
 | 1 | Post a job requisition | ✅ Done | Employer role + `job_requisitions` CRUD, no AI |
-| 2 | Org/situational/cultural Q&A | ⬜ Not started | Unblocked — CVF-quadrant question decided (spec §4) |
+| 2 | Org/situational/cultural Q&A | ✅ Done | Live-chat elicitation + shared-vocabulary culture signal |
 | 3 | Basic candidate search | ⬜ Not started | Blocked: discoverability opt-in decision (spec §5) |
 | 4 | Short 1:1 virtual interview | ⬜ Not started | Blocked: consent-to-interview decision (spec §6) |
 | 5 | Batch interview + scoring/comparison | ⬜ Not started | Blocked: fixed vs. adaptive question set (spec §7) |
@@ -71,11 +71,60 @@ specified, no company/org entity was added, requisitions are owner-scoped only.
 
 ## Phase 2 — Org/situational/cultural Q&A
 
-Not started. **CVF-quadrant convergence decided (2026-09-12, spec §4):** shared `CvfQuadrant`
-enum, separate table — `requisition_culture_signal` (not the candidate's `culture_signal`), own
-inference chain reusing the existing quadrant-mapping prompt shape from `culture-signal.chain.ts`.
+**Depends on:** Phase 1 (`job_requisitions`). **Decided before starting:** CVF-quadrant
+convergence (2026-09-12, spec §4) — shared `CvfQuadrant` enum, separate table
+(`requisition_culture_signal`, not the candidate's `culture_signal`).
 
-Still open before/while building: whether the elicitation turn itself reuses `runElicitationTurn`
-directly or gets its own `requisition-elicitation.chain.ts` sibling (spec leans toward direct
-reuse, given the structural closeness to Step 3/logistics rather than Step 5) — a smaller call to
-make once the route/service scaffolding is underway, not a hard blocker.
+**What was built:**
+- `requisition-qa.ts` (new, `backend/src/models/`) — the step-shaped constants
+  (`REQUISITION_QA_STEP_NAME`/`_COMPLETION_CRITERIA`/`_CONVERSATION_STARTERS`,
+  `requisitionQaInfoAreas`) fed straight into `runElicitationTurn`, same shape as a candidate
+  `FlowStep` but not one — this isn't part of `flowStages`/`flow-steps.ts` (candidate-only).
+- Three tables (migrations `20260913000001..003`): `requisition_threads` (one per requisition,
+  no channel column — always app), `requisition_messages` (`requisition_id` denormalized
+  alongside `thread_id`, mirroring `messages.user_id`/`.step` sitting next to `.thread_id`), and
+  `requisition_culture_signal` (`requisition_id`, `cvf_quadrant`, `source_message_ids`).
+- `RequisitionConversationService` (`getOrCreateThread`/`getHistory`/`ensureOpeningMessage`/
+  `postUserMessage`) — calls `runElicitationTurn` directly, **no**
+  `requisition-elicitation.chain.ts` wrapper (see the spec's "AI" section for why: a pure
+  pass-through would just be indirection over what `ConversationService` already does inline for
+  logistics). `postUserMessage` folds every prior assistant turn's `metadata` together as
+  `knownData` (no dedicated structured-data table for this step, unlike `logistics_responses`);
+  on `turn.complete` it flips `job_requisitions.status` to `'active'` and kicks off
+  `RequisitionCultureSignalService.regenerate` (fire-and-forget, logged on failure, never gates
+  completion — same pattern `ConversationService` uses for logistics' own evidence indexing).
+- `RequisitionCultureSignalService` + `ai/requisition-culture-signal.chain.ts`
+  (`inferRequisitionCultureSignals`) — mirrors `CultureSignalService`/`culture-signal.chain.ts`'s
+  shape exactly (wholesale-replace on regenerate, same quadrant enum, same de-dup rules) but its
+  own prompt: sources every employer (`role: 'user'`) message in the thread rather than three
+  named library questions, and frames the read as *direct* team-culture description rather than
+  *indirect* former-employer inference — the distinction the CVF decision turned on.
+- Routes on `requisitions.routes.ts`: `GET /:id/qa` (opens/resumes — folds the spec's originally-
+  sketched separate `qa/start` into this one call) and `POST /:id/qa/message`, both behind the
+  existing `requisitionService.get()` ownership check.
+- WebSocket: **built both REST and WS** (spec's "WebSocket vs. REST" question decided in favor of
+  WS, per its own "more consistent" flag) — `websocket/server.ts` now branches on a
+  `?requisitionId=` query param alongside its existing `?step=` branch, reusing the same
+  connection/heartbeat/message-dispatch plumbing; completion is signaled with a new
+  `requisition:complete` event (no `FlowProgress`/`step:complete` concept applies to a
+  requisition). `frontend/core/websocket/websocket.service.ts`'s `connect()` now accepts either
+  a step string or `{ requisitionId }`.
+- Frontend: `RequisitionChatPanelComponent` (new, `features/employer/`) — a smaller, separate
+  component rather than a generalization of the candidate's `ChatPanelComponent` (no
+  `FlowProgress`/glyph-tracker concept applies here). `EmployerRequisitionDetailComponent` embeds
+  it while `status === 'draft'`, and falls back to a read-only transcript (`RequisitionService.getQa`,
+  REST) once the thread completes.
+
+**Deviations from the spec doc:** the `qa/start` endpoint was folded into `GET .../qa` (see
+above); everything else matches the spec's sketch.
+
+**Files touched:** see the commit this section landed in.
+
+---
+
+## Phase 3 — Basic candidate search
+
+Not started. Blocked on the discoverability opt-in decision (spec §5) — what makes a candidate
+visible to employer search at all. Spec's own recommendation: an opt-in
+`candidate_profiles.discoverable` flag, but flagged as a real product call to confirm before
+starting, not an engineering one to assume.

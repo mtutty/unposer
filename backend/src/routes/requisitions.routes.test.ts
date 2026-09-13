@@ -24,16 +24,20 @@ jest.mock('../middleware/auth', () => ({
 }));
 
 jest.mock('../services/requisition.service');
+jest.mock('../services/requisition-conversation.service');
 
 import express from 'express';
 import request from 'supertest';
 import { RequisitionService } from '../services/requisition.service';
+import { RequisitionConversationService } from '../services/requisition-conversation.service';
 import { errorHandler } from '../middleware/error-handler';
 import { AppError } from '../types';
 import requisitionsRoutes from './requisitions.routes';
 
 const mockRequisitionService = (RequisitionService as jest.MockedClass<typeof RequisitionService>).mock
   .instances[0] as jest.Mocked<RequisitionService>;
+const mockRequisitionConversation = (RequisitionConversationService as jest.MockedClass<typeof RequisitionConversationService>).mock
+  .instances[0] as jest.Mocked<RequisitionConversationService>;
 
 function buildApp() {
   const app = express();
@@ -142,6 +146,72 @@ describe('requisitions.routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('NOT_DRAFT');
+    });
+  });
+
+  describe('GET /:id/qa', () => {
+    it('checks ownership via requisitionService.get before touching the conversation', async () => {
+      mockRequisitionService.get.mockRejectedValue(new AppError('NOT_FOUND', 'Requisition not found', 404));
+
+      const res = await request(app).get('/r1/qa').set('x-test-user', 'u1');
+
+      expect(res.status).toBe(404);
+      expect(mockRequisitionConversation.ensureOpeningMessage).not.toHaveBeenCalled();
+    });
+
+    it('opens/resumes the thread and returns messages + thread status', async () => {
+      mockRequisitionService.get.mockResolvedValue({ id: 'r1' } as any);
+      mockRequisitionConversation.ensureOpeningMessage.mockResolvedValue([{ id: 'm1', content: 'hi' } as any]);
+      mockRequisitionConversation.getOrCreateThread.mockResolvedValue({ id: 'thread-1', status: 'active' } as any);
+
+      const res = await request(app).get('/r1/qa').set('x-test-user', 'u1');
+
+      expect(res.status).toBe(200);
+      expect(mockRequisitionConversation.ensureOpeningMessage).toHaveBeenCalledWith('r1');
+      expect(res.body).toEqual({ messages: [{ id: 'm1', content: 'hi' }], thread: { id: 'thread-1', status: 'active' } });
+    });
+  });
+
+  describe('POST /:id/qa/message', () => {
+    it('rejects empty content before calling the service', async () => {
+      const res = await request(app).post('/r1/qa/message').set('x-test-user', 'u1').send({ content: '' });
+
+      expect(res.status).toBe(400);
+      expect(mockRequisitionConversation.postUserMessage).not.toHaveBeenCalled();
+    });
+
+    it('checks ownership via requisitionService.get before posting', async () => {
+      mockRequisitionService.get.mockRejectedValue(new AppError('NOT_FOUND', 'Requisition not found', 404));
+
+      const res = await request(app).post('/r1/qa/message').set('x-test-user', 'u1').send({ content: 'hi' });
+
+      expect(res.status).toBe(404);
+      expect(mockRequisitionConversation.postUserMessage).not.toHaveBeenCalled();
+    });
+
+    it('posts the message and returns the turn outcome', async () => {
+      mockRequisitionService.get.mockResolvedValue({ id: 'r1' } as any);
+      mockRequisitionConversation.postUserMessage.mockResolvedValue({
+        assistantMessage: { content: 'reply' } as any,
+        complete: false,
+        thread: { id: 'thread-1' } as any
+      });
+
+      const res = await request(app).post('/r1/qa/message').set('x-test-user', 'u1').send({ content: 'Team of 5.' });
+
+      expect(res.status).toBe(200);
+      expect(mockRequisitionConversation.postUserMessage).toHaveBeenCalledWith('r1', 'Team of 5.');
+      expect(res.body).toEqual({ assistantMessage: { content: 'reply' }, complete: false, thread: { id: 'thread-1' } });
+    });
+
+    it('propagates a THREAD_COMPLETE AppError', async () => {
+      mockRequisitionService.get.mockResolvedValue({ id: 'r1' } as any);
+      mockRequisitionConversation.postUserMessage.mockRejectedValue(new AppError('THREAD_COMPLETE', 'This conversation is already complete.', 400));
+
+      const res = await request(app).post('/r1/qa/message').set('x-test-user', 'u1').send({ content: 'hi' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('THREAD_COMPLETE');
     });
   });
 });

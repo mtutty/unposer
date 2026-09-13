@@ -156,29 +156,44 @@ Frontend reads step *and stage* definitions from `/api/flow/steps` and renders t
 
 A parallel, independent workstream on top of the same `users`/auth model — see
 `docs/employer-onboarding-spec.md` (design, phased) and
-`docs/employer-onboarding-implementation-plan.md` (status tracker). **Phase 1 only is built:** a
-new `'employer'` role (invite-only, same `invited`/`invited_role` mechanism as the existing
-`'invited'` role — see Security Notes below) and plain CRUD over a new `job_requisitions` table
-(`RequisitionService`, `POST/GET /api/requisitions`, `GET/PATCH /api/requisitions/:id`, gated by
-the new `requireEmployer` middleware), surfaced at `/employer/requisitions` (`features/employer/`,
-`employerGuard`). A requisition stays `status: 'draft'` — editable — until Phase 2's
-org/situational/cultural Q&A (not built) flips it `'active'`; nothing else in this workstream
-(search, virtual interviews, batch scoring — Phases 2–5) exists yet, each blocked on a real
-product decision flagged in the spec.
+`docs/employer-onboarding-implementation-plan.md` (status tracker). **Phases 1–2 are built:**
+- **Phase 1** — a new `'employer'` role (invite-only, same `invited`/`invited_role` mechanism as
+  the existing `'invited'` role — see Security Notes below) and plain CRUD over a new
+  `job_requisitions` table (`RequisitionService`, `POST/GET /api/requisitions`,
+  `GET/PATCH /api/requisitions/:id`, gated by the new `requireEmployer` middleware), surfaced at
+  `/employer/requisitions` (`features/employer/`, `employerGuard`).
+- **Phase 2** — org/situational/cultural Q&A. Live-chat-only (spec §2.2), same
+  `runElicitationTurn` engine Step 3 logistics uses, called directly from
+  `RequisitionConversationService` (no `requisition-elicitation.chain.ts` wrapper — see that
+  service's own comment for why). One thread per requisition (`requisition_threads`/
+  `requisition_messages`, no channel column), reached over the same `/ws` WebSocket as the
+  candidate steps (`?requisitionId=` instead of `?step=`, see WebSocket Events below) or plain
+  REST (`GET /api/requisitions/:id/qa`, `POST /api/requisitions/:id/qa/message`). Completion
+  flips `job_requisitions.status` to `'active'` and (best-effort, never gating completion)
+  triggers `RequisitionCultureSignalService.regenerate` — an employer's direct description of
+  their own team's culture, tagged onto the *same* `CvfQuadrant` vocabulary the candidate side's
+  `culture_signal` uses (spec §4's decision, 2026-09-12), but into its own
+  `requisition_culture_signal` table: `culture_signal` specifically means "a candidate's *former*
+  employer's culture, inferred indirectly," a different provenance than an employer describing
+  their *current* team directly, so the two are never blended into one table.
+
+Nothing else in this workstream (search, virtual interviews, batch scoring — Phases 3–5) exists
+yet, each blocked on its own flagged product decision in the spec.
 
 ## WebSocket Events
 
-Connection: `ws://<host>/ws?step=logistics|deep_prompts` — no token on the query string; the session is an httpOnly cookie that the browser attaches to the same-origin WS handshake automatically, and the server reads it off the upgrade request's `Cookie` header. Live chat exists only for these two steps (app channel); sandbox and the public share link are plain REST.
+Connection: `ws://<host>/ws?step=logistics|deep_prompts` (candidate) or `ws://<host>/ws?requisitionId=<id>` (employer requisition Q&A, Phase 2 — docs/employer-onboarding-spec.md §4, owner-checked server-side) — no token on the query string; the session is an httpOnly cookie that the browser attaches to the same-origin WS handshake automatically, and the server reads it off the upgrade request's `Cookie` header. Live chat exists only for these three connections; sandbox, the public share link, and the employer requisition CRUD are plain REST.
 
 **Client → Server:**
 - `chat:message` - User sends message
 - `chat:typing` - Typing indicator (currently unused — single-participant thread)
-- `chat:resume` - Request history + progress for the connected step
+- `chat:resume` - Request history (+ progress, for a candidate step) for the connected thread
 
 **Server → Client:**
 - `chat:message` - AI response
-- `progress:update` - Flow progress changed
-- `step:complete` - The connected step just completed
+- `progress:update` - Flow progress changed (candidate steps only — a requisition has no FlowProgress)
+- `step:complete` - The connected candidate step just completed
+- `requisition:complete` - The connected requisition's Q&A just completed (job_requisitions.status → 'active')
 - `error` - `{ code, message, retryable }`
 
 ## Development Workflow

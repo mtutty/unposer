@@ -24,11 +24,13 @@ jest.mock('ws', () => ({
 jest.mock('../db/connection', () => ({ db: jest.fn() }));
 jest.mock('../services/conversation.service');
 jest.mock('../services/topic-conversation.service');
+jest.mock('../services/requisition-conversation.service');
 jest.mock('../services/flow.service');
 
 import { db } from '../db/connection';
 import { ConversationService } from '../services/conversation.service';
 import { TopicConversationService } from '../services/topic-conversation.service';
+import { RequisitionConversationService } from '../services/requisition-conversation.service';
 import { FlowService } from '../services/flow.service';
 import { WSServer } from './server';
 
@@ -44,10 +46,14 @@ function makeBuilder(resolvedValue: any) {
 // A live, non-expired session for user 'u1' by default — the common case every connection test
 // starts from unless it's specifically testing session lookup itself.
 let sessionRow: any = { user_id: 'u1' };
+// A requisition owned by 'u1' by default, for the requisitionId connection branch — see
+// wireDb's 'job_requisitions' lookup.
+let requisitionRow: any = { id: 'req-1', user_id: 'u1' };
 
 function wireDb() {
   dbMock.mockImplementation((table: string) => {
     if (table === 'sessions') return makeBuilder(sessionRow);
+    if (table === 'job_requisitions') return makeBuilder(requisitionRow);
     throw new Error(`unexpected table in test: ${table}`);
   });
 }
@@ -55,6 +61,7 @@ function wireDb() {
 class FakeClient extends EventEmitter {
   userId?: string;
   step?: string;
+  requisitionId?: string;
   isAlive?: boolean;
   readyState = 1; // WebSocket.OPEN
   send = jest.fn();
@@ -68,8 +75,14 @@ function fakeReq(cookie: string | undefined, step: string | undefined) {
   return { url: `/ws${qs}`, headers: { host: 'localhost', cookie } };
 }
 
+function fakeRequisitionReq(cookie: string | undefined, requisitionId: string | undefined) {
+  const qs = requisitionId !== undefined ? `?requisitionId=${requisitionId}` : '';
+  return { url: `/ws${qs}`, headers: { host: 'localhost', cookie } };
+}
+
 let mockConversation: jest.Mocked<ConversationService>;
 let mockTopicConversation: jest.Mocked<TopicConversationService>;
+let mockRequisitionConversation: jest.Mocked<RequisitionConversationService>;
 let mockFlow: jest.Mocked<FlowService>;
 let wss: FakeWebSocketServer;
 
@@ -79,6 +92,13 @@ async function connect(cookie: string | undefined, step: string | undefined): Pr
   const client = new FakeClient();
   const listener = wss.listeners('connection')[0] as (ws: any, req: any) => Promise<void>;
   await listener(client, fakeReq(cookie, step));
+  return client;
+}
+
+async function connectRequisition(cookie: string | undefined, requisitionId: string | undefined): Promise<FakeClient> {
+  const client = new FakeClient();
+  const listener = wss.listeners('connection')[0] as (ws: any, req: any) => Promise<void>;
+  await listener(client, fakeRequisitionReq(cookie, requisitionId));
   return client;
 }
 
@@ -97,6 +117,7 @@ describe('WSServer', () => {
     jest.clearAllMocks();
     wssInstances.length = 0;
     sessionRow = { user_id: 'u1' };
+    requisitionRow = { id: 'req-1', user_id: 'u1' };
     wireDb();
 
     new WSServer({} as any);
@@ -106,6 +127,8 @@ describe('WSServer', () => {
       .instances[0] as jest.Mocked<ConversationService>;
     mockTopicConversation = (TopicConversationService as jest.MockedClass<typeof TopicConversationService>).mock
       .instances[0] as jest.Mocked<TopicConversationService>;
+    mockRequisitionConversation = (RequisitionConversationService as jest.MockedClass<typeof RequisitionConversationService>).mock
+      .instances[0] as jest.Mocked<RequisitionConversationService>;
     mockFlow = (FlowService as jest.MockedClass<typeof FlowService>).mock.instances[0] as jest.Mocked<FlowService>;
     mockFlow.getProgress.mockResolvedValue({} as any); // no logistics_channel set — app is allowed
   });
@@ -180,6 +203,102 @@ describe('WSServer', () => {
       client.isAlive = false;
       client.emit('pong');
       expect(client.isAlive).toBe(true);
+    });
+  });
+
+  describe('requisition Q&A connection (Phase 2)', () => {
+    it('closes 1008 with no session_token cookie', async () => {
+      const client = await connectRequisition(undefined, 'req-1');
+      expect(client.close).toHaveBeenCalledWith(1008, expect.any(String));
+      expect(dbMock).not.toHaveBeenCalled();
+    });
+
+    it('closes 1008 with no ?requisitionId and no ?step', async () => {
+      const client = await connectRequisition('session_token=tok-1', undefined);
+      expect(client.close).toHaveBeenCalledWith(1008, expect.any(String));
+    });
+
+    it('closes 1008 when the token matches no live session', async () => {
+      sessionRow = undefined;
+      wireDb();
+
+      const client = await connectRequisition('session_token=tok-1', 'req-1');
+
+      expect(client.close).toHaveBeenCalledWith(1008, 'Invalid token');
+    });
+
+    it("closes 1008 when the requisition doesn't exist or isn't owned by this session", async () => {
+      requisitionRow = undefined;
+      wireDb();
+
+      const client = await connectRequisition('session_token=tok-1', 'req-1');
+
+      expect(client.close).toHaveBeenCalledWith(1008, 'Requisition not found');
+    });
+
+    it('sets userId/requisitionId/isAlive on a successful connection, and never sets step', async () => {
+      const client = await connectRequisition('session_token=tok-1', 'req-1');
+      expect(client.close).not.toHaveBeenCalled();
+      expect(client.userId).toBe('u1');
+      expect(client.requisitionId).toBe('req-1');
+      expect(client.step).toBeUndefined();
+      expect(client.isAlive).toBe(true);
+      expect(mockFlow.getProgress).not.toHaveBeenCalled(); // no FlowProgress concept for a requisition
+    });
+
+    it('chat:message routes through RequisitionConversationService and emits requisition:complete on the final turn', async () => {
+      const client = await connectRequisition('session_token=tok-1', 'req-1');
+      mockRequisitionConversation.postUserMessage.mockResolvedValue({
+        assistantMessage: { content: 'All set!' } as any,
+        complete: true,
+        thread: {} as any
+      });
+
+      await send(client, 'chat:message', { content: 'done' });
+
+      expect(mockRequisitionConversation.postUserMessage).toHaveBeenCalledWith('req-1', 'done');
+      expect(mockConversation.postUserMessage).not.toHaveBeenCalled();
+      const events = client.send.mock.calls.map((c: any[]) => JSON.parse(c[0]));
+      expect(events).toEqual([
+        { event: 'chat:message', payload: { content: 'All set!' } },
+        { event: 'requisition:complete', payload: { requisitionId: 'req-1' } }
+      ]);
+      expect(mockFlow.completeStep).not.toHaveBeenCalled();
+    });
+
+    it('chat:message sends nothing beyond the reply when not complete', async () => {
+      const client = await connectRequisition('session_token=tok-1', 'req-1');
+      mockRequisitionConversation.postUserMessage.mockResolvedValue({
+        assistantMessage: { content: 'Tell me more' } as any,
+        complete: false,
+        thread: {} as any
+      });
+
+      await send(client, 'chat:message', { content: 'hi' });
+
+      expect(client.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('chat:message sends an error event instead of throwing when the service rejects', async () => {
+      const client = await connectRequisition('session_token=tok-1', 'req-1');
+      mockRequisitionConversation.postUserMessage.mockRejectedValue({ code: 'THREAD_COMPLETE', message: 'Already done' });
+
+      await send(client, 'chat:message', { content: 'hi' });
+
+      const [sent] = client.send.mock.calls.map((c: any[]) => JSON.parse(c[0]));
+      expect(sent).toEqual({ event: 'error', payload: { code: 'THREAD_COMPLETE', message: 'Already done', retryable: false } });
+    });
+
+    it('chat:resume opens/resumes the thread via RequisitionConversationService, with no progress:update', async () => {
+      const client = await connectRequisition('session_token=tok-1', 'req-1');
+      mockRequisitionConversation.ensureOpeningMessage.mockResolvedValue([{ content: 'Tell me about the team.' } as any]);
+
+      await send(client, 'chat:resume');
+
+      expect(mockRequisitionConversation.ensureOpeningMessage).toHaveBeenCalledWith('req-1');
+      expect(mockConversation.ensureOpeningMessage).not.toHaveBeenCalled();
+      const [sent] = client.send.mock.calls.map((c: any[]) => JSON.parse(c[0]));
+      expect(sent).toEqual({ event: 'chat:message', payload: { content: 'Tell me about the team.' } });
     });
   });
 

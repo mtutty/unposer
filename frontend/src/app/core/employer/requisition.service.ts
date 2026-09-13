@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from '../api/api.service';
-import { JobRequisition } from '../../models/requisition.model';
+import { JobRequisition, RequisitionMessage, RequisitionThread } from '../../models/requisition.model';
 
 /** Employer-side onboarding Phase 1 (backend/src/routes/requisitions.routes.ts) — every call
  *  requires the signed-in user to have role 'employer' server-side; this service has no
@@ -32,5 +32,13 @@ export class RequisitionService {
     changes: { title?: string; description?: string; requirements?: string }
   ): Observable<{ requisition: JobRequisition }> {
     return this.api.patch<{ requisition: JobRequisition }>(`/requisitions/${id}`, changes);
+  }
+
+  /** Phase 2 — org/situational/cultural Q&A (docs/employer-onboarding-spec.md §4). Opens/resumes
+   *  the thread and returns its full history — used for the read-only transcript once the thread
+   *  is complete; the live back-and-forth itself goes over WebSocket (RequisitionChatPanelComponent),
+   *  not this REST call, per the spec's live-chat-only decision. */
+  getQa(id: string): Observable<{ messages: RequisitionMessage[]; thread: RequisitionThread }> {
+    return this.api.get<{ messages: RequisitionMessage[]; thread: RequisitionThread }>(`/requisitions/${id}/qa`);
   }
 }

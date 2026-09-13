@@ -12,3 +12,25 @@ export interface JobRequisition {
   created_at: string;
   updated_at: string;
 }
+
+// Phase 2 — org/situational/cultural Q&A (docs/employer-onboarding-spec.md §4).
+export type RequisitionThreadStatus = 'active' | 'complete';
+
+export interface RequisitionThread {
+  id: string;
+  requisition_id: string;
+  status: RequisitionThreadStatus;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RequisitionMessage {
+  id: string;
+  thread_id: string;
+  requisition_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  metadata: Record<string, any>;
+  created_at: string;
+}

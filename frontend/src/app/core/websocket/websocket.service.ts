@@ -26,11 +26,14 @@ export class WebSocketService {
   private connectionToken = 0;
 
   /**
-   * Live chat only exists for 'logistics' (app channel) and 'deep_prompts' — see spec Step 4/5.
-   * No token is passed here: the session lives in an httpOnly cookie, which the browser attaches
-   * to this same-origin WS handshake automatically; the server reads it off the upgrade request.
+   * Live chat exists for the candidate's 'logistics' (app channel) and 'deep_prompts' steps (see
+   * spec Step 4/5), plus — per docs/employer-onboarding-spec.md §2.2's always-live-chat decision
+   * — an employer's requisition Q&A (Phase 2), addressed by `{ requisitionId }` instead of a
+   * step id (see websocket/server.ts's own branching on the same two query-param shapes). No
+   * token is passed here: the session lives in an httpOnly cookie, which the browser attaches to
+   * this same-origin WS handshake automatically; the server reads it off the upgrade request.
    */
-  connect(step: 'logistics' | 'deep_prompts'): void {
+  connect(target: 'logistics' | 'deep_prompts' | { requisitionId: string }): void {
     if (this.ws) {
       this.ws.close();
     }
@@ -38,8 +41,9 @@ export class WebSocketService {
     const token = ++this.connectionToken;
     const isCurrent = () => token === this.connectionToken;
 
+    const query = typeof target === 'string' ? `step=${target}` : `requisitionId=${target.requisitionId}`;
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws?step=${step}`;
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws?${query}`;
     const socket = new WebSocket(wsUrl);
     this.ws = socket;
 

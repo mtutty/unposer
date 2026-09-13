@@ -160,6 +160,11 @@ detail pattern than the candidate's linear step rail.
 
 ## 4. Phase 2 — Organizational/situational/cultural Q&A
 
+**Built (2026-09-13)** — see `docs/employer-onboarding-implementation-plan.md` for what actually
+shipped vs. this section's original sketch (the REST endpoint shape changed slightly: `qa/start`
+was folded into `GET .../qa`, and a WebSocket transport was added alongside REST, per the "WS vs.
+REST" subsection below actually being resolved in favor of WS).
+
 **Mirrors:** the candidate `deep_prompts` step's elicitation shape (open-ended chat, coverage of
 several information areas), narrowed per §2.2 above to always-live-chat and a bounded 5–20 minute
 session rather than an open-ended, tier-gated, multi-week engine. **Does not** reuse the
@@ -226,31 +231,35 @@ multiple steps the way a candidate's onboarding does.
 
 ### AI
 
-New `backend/src/ai/requisition-elicitation.chain.ts` — thin wrapper around the same
-`runElicitationTurn` used by `ConversationService` today, or (if a requisition-specific
-completion/probing style ends up warranted once this is actually built) a sibling chain following
-the same "sibling, not a mode" precedent `topic-elicitation.chain.ts` set for deep_prompts vs.
-logistics. A generic step-shaped call (fixed completion criteria, fixed conversation starters, no
-tier/topic concept) is the more likely fit given how close this is structurally to the *logistics*
-step, not deep_prompts.
+**Decided (2026-09-13):** no `requisition-elicitation.chain.ts` wrapper — `RequisitionConversationService`
+calls `runElicitationTurn` directly, exactly the way `ConversationService` already does for
+logistics with no intermediate chain file. A pure pass-through wrapper would have just added a
+layer of indirection over the same generic, fixed-step call (fixed completion criteria, fixed
+conversation starters, no tier/topic concept) this section already predicted was the likely fit,
+given how close this is structurally to the *logistics* step, not deep_prompts.
 
 ### API sketch
 
 ```
-POST /api/requisitions/:id/qa/start      — opens the thread, returns the opener
+GET  /api/requisitions/:id/qa            — opens/resumes: full history + status (also generates
+                                            the opener on first visit — folds the originally-
+                                            sketched separate `qa/start` into this one call, same
+                                            as ConversationService.ensureOpeningMessage's role for
+                                            logistics/deep_prompts)
 POST /api/requisitions/:id/qa/message    — one chat turn
-GET  /api/requisitions/:id/qa            — resume: full history + status
 ```
 
 On `complete`, flips `job_requisitions.status` to `'active'`.
 
 ### WebSocket vs. REST
 
-The candidate side uses a WebSocket for its two live-chat steps (`ws://<host>/ws?step=...`).
-Given this is also always-live-chat, the same WS pattern is the natural fit
-(`websocket/server.ts` branching on a new `requisitionId` query param the way it already branches
-on `step`) rather than a polling REST chat loop — a decision for whoever builds this, not resolved
-further here, but flagged as the more consistent choice given the precedent.
+**Decided (built both, 2026-09-13):** the candidate side uses a WebSocket for its two live-chat
+steps (`ws://<host>/ws?step=...`); this is also always-live-chat, so `websocket/server.ts` branches
+on a new `requisitionId` query param the way it already branches on `step`, and
+`frontend/src/app/core/websocket/websocket.service.ts`'s `connect()` takes either shape. A REST
+path exists too (`GET/POST /api/requisitions/:id/qa`, `qa/message`) — not a polling chat loop, but
+the resume/read path (used for the completed, read-only transcript) and a non-realtime fallback,
+mirroring how sandbox/share stay REST-only despite logistics/deep_prompts having a WS transport.
 
 ---
 
