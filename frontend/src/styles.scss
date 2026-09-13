@@ -50,6 +50,12 @@
 html,
 body {
   height: 100%;
+  // Safety net, not the fix itself — the actual bugs are unwrapped flex/grid rows and
+  // unconstrained content forcing their container wider (see TopbarComponent/PublicNavComponent).
+  // This just guarantees one of those elsewhere can never again scroll the *whole page*
+  // sideways; an element that still overflows its own box is still a bug worth fixing at the
+  // source, just a contained one instead of a page-wide horizontal scrollbar.
+  overflow-x: hidden;
 }
 
 body {

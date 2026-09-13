@@ -42,6 +42,13 @@ import { AuthService } from '../../../core/auth/auth.service';
         display: flex;
         align-items: center;
         justify-content: space-between;
+        // Every page in the app renders this — brand, identity, and 1-2 action links all in one
+        // row — which is more than a phone-width screen can hold at once. Without wrapping, the
+        // row simply forces the whole page wider instead of breaking, giving every screen behind
+        // this component a horizontal scrollbar. Wrapping the user block onto its own line below
+        // the brand is the fix, not shrinking/hiding content.
+        flex-wrap: wrap;
+        row-gap: 0.5rem;
         padding: 1rem 1.5rem;
         background: var(--cover);
         color: var(--paper-text);
@@ -66,6 +73,8 @@ import { AuthService } from '../../../core/auth/auth.service';
       .user {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
+        row-gap: 0.4em;
         gap: 0.9em;
       }
 
@@ -73,6 +82,7 @@ import { AuthService } from '../../../core/auth/auth.service';
         display: flex;
         align-items: center;
         gap: 0.5em;
+        min-width: 0;
       }
 
       .avatar {
@@ -92,6 +102,11 @@ import { AuthService } from '../../../core/auth/auth.service';
 
       .user .meta {
         color: var(--paper-text-soft);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 40vw;
       }
 
       .user .btn-ghost {

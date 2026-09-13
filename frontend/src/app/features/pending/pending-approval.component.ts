@@ -64,6 +64,8 @@ import { HowItWorksContentComponent } from '../how-it-works/how-it-works-content
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
+        row-gap: 0.5rem;
         padding: 1rem 1.5rem;
         background: var(--cover);
       }

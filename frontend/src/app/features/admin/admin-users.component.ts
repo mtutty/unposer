@@ -88,6 +88,7 @@ interface UserRow {
         <p class="error">{{ loadError() }}</p>
       }
 
+      <div class="table-scroll">
       <table class="user-table">
         <thead>
           <tr>
@@ -156,6 +157,7 @@ interface UserRow {
           }
         </tbody>
       </table>
+      </div>
 
       <p class="meta">{{ total() }} total</p>
     </div>
@@ -195,8 +197,16 @@ interface UserRow {
         min-width: 12rem;
       }
 
+      // The table itself can be wider than a phone screen (6 columns) — this is its one allowed
+      // horizontal-scroll region (see styles.scss's page-wide overflow-x:hidden guard) rather
+      // than either forcing the whole page wider or silently clipping columns off-screen.
+      .table-scroll {
+        overflow-x: auto;
+      }
+
       .user-table {
         width: 100%;
+        min-width: 640px;
         border-collapse: collapse;
         font-family: var(--font-mono);
         font-size: 0.9rem;

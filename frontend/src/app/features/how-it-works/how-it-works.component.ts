@@ -114,6 +114,8 @@ import { HowItWorksContentComponent } from './how-it-works-content.component';
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
+        row-gap: 0.5rem;
       }
 
       .brand {

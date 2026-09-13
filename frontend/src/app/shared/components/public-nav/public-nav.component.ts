@@ -28,6 +28,10 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         display: flex;
         align-items: center;
         justify-content: space-between;
+        // Shown on every signed-out screen — brand + links can crowd a phone-width row. Wrap
+        // rather than force the page wider (see TopbarComponent, same shape/fix).
+        flex-wrap: wrap;
+        row-gap: 0.5rem;
         padding: 1rem 1.5rem;
         background: var(--cover);
       }
@@ -51,6 +55,8 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
       .links {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
+        row-gap: 0.4em;
         gap: 1.25rem;
       }
 

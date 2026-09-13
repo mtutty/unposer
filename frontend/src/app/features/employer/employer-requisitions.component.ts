@@ -49,6 +49,7 @@ import { JobRequisition } from '../../models/requisition.model';
         <p class="error">{{ loadError() }}</p>
       }
 
+      <div class="table-scroll">
       <table class="req-table">
         <thead>
           <tr>
@@ -73,6 +74,7 @@ import { JobRequisition } from '../../models/requisition.model';
           }
         </tbody>
       </table>
+      </div>
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -87,8 +89,16 @@ import { JobRequisition } from '../../models/requisition.model';
         max-width: 40rem;
       }
 
+      // Same reasoning as admin-users.component.ts's .table-scroll — a long title plus the
+      // Status/Created/View columns is more than a phone screen holds; this is the table's own
+      // scroll region rather than forcing the whole page wider.
+      .table-scroll {
+        overflow-x: auto;
+      }
+
       .req-table {
         width: 100%;
+        min-width: 480px;
         border-collapse: collapse;
         font-family: var(--font-mono);
         font-size: 0.9rem;
