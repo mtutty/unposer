@@ -181,12 +181,19 @@ useful to ask:
   before (a "what doesn't work" question, mirroring the candidate side's own reluctance to only
   ask positively-framed questions).
 
-**Open question, deliberately not resolved here:** should this reuse the personality engine's
-Cultural Value Framework quadrant model (`culture_signal`, `CvfQuadrant` — spec §7) so an
-employer's answers and a candidate's Q0/Q15/Q21 answers land on the *same* four-quadrant scale,
-making a future "culture fit" comparison meaningful? That's a real, valuable convergence point,
-but it's also the kind of cross-side coupling that should be a deliberate decision once Phase 2 is
-actually being built, not assumed here.
+**Decided (2026-09-12):** yes to the CVF vocabulary, no to the candidate-side table. Cultural
+answers here are tagged onto the same `CvfQuadrant` enum (`hierarchy | adhocracy | clan | market`)
+the candidate side already uses (`culture_signal`, spec §7) — the Cultural info area above maps
+almost verbatim onto that spec's own quadrant-mapping table, and inventing a second, differently-
+shaped taxonomy for the employer side would forfeit the whole point of a future "culture fit"
+comparison. But it's a **separate table**, not a shared one: `culture_signal` is specifically
+"this candidate's *former* employer's culture, inferred indirectly from three story questions" —
+a materially different (and lower-confidence) kind of fact than a current employer describing
+their *own* team's culture directly. Conflating the two provenances in one table would be the same
+mistake this codebase deliberately avoids elsewhere (e.g. keeping distilled vs. raw evidence tiers
+separate rather than blending them). New `requisition_culture_signal` table instead — same enum,
+own inference chain (`requisition-culture-signal.chain.ts`, reusing the quadrant-mapping prompt
+shape from `culture-signal.chain.ts` rather than a new taxonomy), scoped to `requisition_id`.
 
 ### Data model
 

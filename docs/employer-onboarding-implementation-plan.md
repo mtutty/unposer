@@ -20,7 +20,7 @@ it tracks against, and pick up exactly where the last phase left off. Mirrors th
 | # | Phase | Status | One-line goal |
 |---|---|---|---|
 | 1 | Post a job requisition | ✅ Done | Employer role + `job_requisitions` CRUD, no AI |
-| 2 | Org/situational/cultural Q&A | ⬜ Not started | Blocked: CVF-quadrant convergence question (spec §4) |
+| 2 | Org/situational/cultural Q&A | ⬜ Not started | Unblocked — CVF-quadrant question decided (spec §4) |
 | 3 | Basic candidate search | ⬜ Not started | Blocked: discoverability opt-in decision (spec §5) |
 | 4 | Short 1:1 virtual interview | ⬜ Not started | Blocked: consent-to-interview decision (spec §6) |
 | 5 | Batch interview + scoring/comparison | ⬜ Not started | Blocked: fixed vs. adaptive question set (spec §7) |
@@ -71,8 +71,11 @@ specified, no company/org entity was added, requisitions are owner-scoped only.
 
 ## Phase 2 — Org/situational/cultural Q&A
 
-Not started. Before beginning: resolve the CVF-quadrant convergence question (spec §4) — should
-an employer's cultural answers land on the same four-quadrant scale as a candidate's
-`culture_signal` rows, enabling a future culture-fit comparison? Also decide whether this reuses
-`runElicitationTurn` directly or gets its own `requisition-elicitation.chain.ts` sibling (spec
-leans toward the former, given the structural closeness to Step 3/logistics rather than Step 5).
+Not started. **CVF-quadrant convergence decided (2026-09-12, spec §4):** shared `CvfQuadrant`
+enum, separate table — `requisition_culture_signal` (not the candidate's `culture_signal`), own
+inference chain reusing the existing quadrant-mapping prompt shape from `culture-signal.chain.ts`.
+
+Still open before/while building: whether the elicitation turn itself reuses `runElicitationTurn`
+directly or gets its own `requisition-elicitation.chain.ts` sibling (spec leans toward direct
+reuse, given the structural closeness to Step 3/logistics rather than Step 5) — a smaller call to
+make once the route/service scaffolding is underway, not a hard blocker.
