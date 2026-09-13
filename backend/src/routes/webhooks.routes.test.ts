@@ -10,7 +10,7 @@ const mockConfig: any = {
     webhookSecret: 'test-webhook-secret',
     inboundDomain: 'reply.example.com',
     fromAddress: 'Unposer <onboarding@example.com>',
-    enabled: true
+    configured: true
   }
 };
 jest.mock('../config', () => ({ config: mockConfig }));
@@ -105,7 +105,7 @@ describe('webhooks.routes POST /inbound-email', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockConfig.nodeEnv = 'test';
-    mockConfig.email.enabled = true;
+    mockConfig.email.configured = true;
     processedBuilder = makeBuilder(['claim-id']); // dedupe insert succeeded — not a duplicate
     conversationThreadsBuilder = makeBuilder(undefined);
     topicThreadBuilder = makeBuilder(undefined);
@@ -114,7 +114,7 @@ describe('webhooks.routes POST /inbound-email', () => {
   });
 
   it('no-ops with 200 when the email gateway is not configured, without touching svix', async () => {
-    mockConfig.email.enabled = false;
+    mockConfig.email.configured = false;
 
     const res = await request(app).post('/inbound-email').send({ any: 'payload' });
 

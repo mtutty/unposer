@@ -28,7 +28,8 @@ before a sign-in call to action. If you're already logged in, you skip straight 
 Dashboard.
 
 **Login (`/login`)** — "Continue with Google" / "Continue with GitHub" buttons (whichever OIDC
-providers are configured), or the dev-only `devuser`/`devpass` bypass. LinkedIn isn't wired up yet.
+providers are configured), or the no-password test-login bypass (dev/test only, never in
+production) — type any username/email, e.g. `devuser`. LinkedIn isn't wired up yet.
 A failed OAuth attempt lands back here with a plain-English reason ("Sign-in was cancelled," "Your
 sign-in session expired").
 

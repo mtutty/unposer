@@ -4,7 +4,7 @@ const mockConfig = {
   frontendUrl: 'http://localhost:4200',
   session: { expiryDays: 7 },
   inviteOnly: { enabled: false },
-  devAuth: { enabled: true, username: 'devuser', password: 'devpass', adminUsername: 'devadmin', adminPassword: 'devadminpass' },
+  testLogin: { enabled: true },
   oidc: {
     google: { clientId: '', clientSecret: '' },
     github: { clientId: 'gh-client', clientSecret: 'gh-secret' }
@@ -142,5 +142,86 @@ describe('AuthService (upsertOidcUser via githubLogin)', () => {
     await expect(service.githubLogin('code')).rejects.toMatchObject({ code: 'EMAIL_IN_USE' });
     expect(usersBuilder.insert).not.toHaveBeenCalled();
     expect(usersBuilder.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService.testLogin', () => {
+  let service: AuthService;
+  let usersBuilder: ReturnType<typeof makeBuilder>;
+  let sessionsBuilder: ReturnType<typeof makeBuilder>;
+  const mockDb = db as unknown as jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockConfig.testLogin.enabled = true;
+    service = new AuthService();
+    usersBuilder = makeBuilder();
+    sessionsBuilder = makeBuilder();
+    sessionsBuilder.insert = jest.fn(() => sessionsBuilder);
+    sessionsBuilder.returning.mockResolvedValue([{ id: 'sess-1', user_id: 'u1', token: 'tok' }]);
+    mockDb.mockImplementation((table: string) => (table === 'sessions' ? sessionsBuilder : usersBuilder));
+  });
+
+  it('throws UNAUTHORIZED without touching the db when disabled', async () => {
+    mockConfig.testLogin.enabled = false;
+
+    await expect(service.testLogin('devuser')).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(usersBuilder.whereRaw).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank identifier', async () => {
+    await expect(service.testLogin('   ')).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
+  it('logs into an existing account by email, whatever its real role/status, without inserting', async () => {
+    usersBuilder.first.mockResolvedValueOnce({ id: 'u9', email: 'real.candidate@example.com', role: 'employer', status: 'active' });
+
+    const { user, token } = await service.testLogin('Real.Candidate@example.com');
+
+    expect(usersBuilder.whereRaw).toHaveBeenCalledWith('lower(email) = ?', ['real.candidate@example.com']);
+    expect(usersBuilder.insert).not.toHaveBeenCalled();
+    expect(user.role).toBe('employer');
+    expect(token).toBe('tok');
+  });
+
+  it('expands a bare word with no "@" to <word>@example.com and creates a plain user account', async () => {
+    usersBuilder.first.mockResolvedValueOnce(undefined);
+    usersBuilder.returning.mockResolvedValueOnce([{ id: 'u10', email: 'someone@example.com', role: 'user' }]);
+
+    await service.testLogin('someone');
+
+    expect(usersBuilder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'someone@example.com', role: 'user', oidc_provider: 'test', oidc_subject: 'someone@example.com' })
+    );
+  });
+
+  it('bootstraps "devadmin" (only on first insert) as a role:admin account', async () => {
+    usersBuilder.first.mockResolvedValueOnce(undefined);
+    usersBuilder.returning.mockResolvedValueOnce([{ id: 'u11', email: 'devadmin@example.com', role: 'admin' }]);
+
+    const { user } = await service.testLogin('devadmin');
+
+    expect(usersBuilder.insert).toHaveBeenCalledWith(expect.objectContaining({ role: 'admin' }));
+    expect(user.role).toBe('admin');
+  });
+
+  it('does not re-promote devadmin to admin on a later login once an admin has demoted it', async () => {
+    usersBuilder.first.mockResolvedValueOnce({ id: 'u11', email: 'devadmin@example.com', role: 'user' });
+
+    const { user } = await service.testLogin('devadmin');
+
+    expect(usersBuilder.insert).not.toHaveBeenCalled();
+    expect(user.role).toBe('user');
+  });
+
+  it('creates a brand-new real email as a plain user account', async () => {
+    usersBuilder.first.mockResolvedValueOnce(undefined);
+    usersBuilder.returning.mockResolvedValueOnce([{ id: 'u12', email: 'a.new.candidate@example.com', role: 'user' }]);
+
+    await service.testLogin('a.new.candidate@example.com');
+
+    expect(usersBuilder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'a.new.candidate@example.com', name: 'A New Candidate', role: 'user' })
+    );
   });
 });

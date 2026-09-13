@@ -41,12 +41,15 @@ chmod +x /root/unposer/run-unposer /root/unposer/update-unposer
 cp .env.template /root/unposer/.env
 # Edit /root/unposer/.env:
 #   NODE_ENV=production
-#   DEV_AUTH_ENABLED=false
 #   DOMAIN_NAME=unposer.com
 #   CERTBOT_EMAIL=<a real address you monitor>
 #   FRONTEND_URL=https://unposer.com
 #   POSTGRES_PASSWORD / SESSION_SECRET → real generated secrets
 #   LLM_API_KEY → real key
+#
+# No TEST_LOGIN_ENABLED step needed here — docker-compose.production.yml hard-overrides it to
+# false on the api service regardless of what .env says (see that file's comment), so the
+# no-password test-login bypass can't accidentally be left reachable on a real deployment.
 ```
 
 If the `deploy` branch doesn't exist yet (first deploy ever, before CI has
@@ -113,7 +116,12 @@ inboxes — the values below all come from `.env`):
 
 Leaving `RESEND_API_KEY`/`RESEND_WEBHOOK_SECRET` unset keeps the channel
 simulated in-app only, same as before this was wired up — nothing else
-breaks.
+breaks. Note that outbound sending only actually calls Resend when
+`NODE_ENV=production` regardless of these keys — everywhere else every
+outbound message is spooled to a `.txt` file under `EMAIL_SPOOL_DIR`
+instead (see `.env.template`'s comment and `email.service.ts`'s
+`spoolEmail`), so setting real creds on a non-production stack only
+enables testing the *inbound* side below, not real outbound delivery.
 
 **Testing without a real inbound email:** `backend/src/scripts/simulate-inbound-email.ts`
 builds a validly-signed `email.received` payload (using the real

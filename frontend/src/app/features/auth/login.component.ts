@@ -77,22 +77,21 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
             Continue with GitHub
           </a>
         }
-        @if (providers().includes('google') || providers().includes('github')) {
+        @if (testLoginEnabled() && (providers().includes('google') || providers().includes('github'))) {
           <p class="meta divider"><span>or</span></p>
         }
 
-        <div class="field">
-          <label for="username">Username</label>
-          <input id="username" type="text" [(ngModel)]="username" name="username" autocomplete="username" required />
-        </div>
-        <div class="field">
-          <label for="password">Password</label>
-          <input id="password" type="password" [(ngModel)]="password" name="password" autocomplete="current-password" required />
-        </div>
+        @if (testLoginEnabled()) {
+          <div class="field">
+            <label for="username">Username or email</label>
+            <input id="username" type="text" [(ngModel)]="username" name="username" autocomplete="username" required />
+          </div>
+          <p class="meta test-login-note">No password needed — this is a test-login bypass, not available in production.</p>
 
-        <button type="submit" class="btn btn-primary" [disabled]="loading()">
-          {{ loading() ? 'Signing in…' : 'Sign in' }}
-        </button>
+          <button type="submit" class="btn btn-primary" [disabled]="loading()">
+            {{ loading() ? 'Signing in…' : 'Sign in' }}
+          </button>
+        }
       </form>
     </div>
   `,
@@ -200,6 +199,11 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
         margin: 0;
       }
 
+      .test-login-note {
+        font-size: 0.8rem;
+        margin: -0.5rem 0 0;
+      }
+
       .divider {
         display: flex;
         align-items: center;
@@ -224,10 +228,12 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 })
 export class LoginComponent implements OnInit {
   username = '';
-  password = '';
   loading = signal(false);
   error = signal('');
   providers = signal<string[]>([]);
+  // Backend's config.testLogin.enabled — forced false in production (see
+  // docker-compose.production.yml), so the no-password form just doesn't render there.
+  testLoginEnabled = signal(false);
 
   constructor(private authService: AuthService, private router: Router, private route: ActivatedRoute) {}
 
@@ -238,8 +244,11 @@ export class LoginComponent implements OnInit {
     }
 
     this.authService.getProviders().subscribe({
-      next: (res) => this.providers.set(res.providers),
-      error: () => {} // Google button just stays hidden — dev login still works either way.
+      next: (res) => {
+        this.providers.set(res.providers);
+        this.testLoginEnabled.set(res.testLogin);
+      },
+      error: () => {} // Google/test-login buttons just stay hidden.
     });
   }
 
@@ -247,7 +256,7 @@ export class LoginComponent implements OnInit {
     this.loading.set(true);
     this.error.set('');
 
-    this.authService.devLogin(this.username, this.password).subscribe({
+    this.authService.testLogin(this.username).subscribe({
       next: ({ user }) => this.router.navigate([user.status === 'pending' ? '/pending' : user.role === 'admin' ? '/admin/users' : '/dashboard']),
       error: (err) => {
         this.error.set(err.error?.error?.message || 'Sign-in failed');

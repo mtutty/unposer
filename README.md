@@ -32,9 +32,12 @@ This platform builds a career profile from a candidate's own stories rather than
 
 ## Development Login
 
-Dev auth is enabled by default:
-- Username: `devuser`
-- Password: `devpass`
+Test login is enabled by default (never in production) — no password, type any username/email
+on the login page:
+- `devuser` signs in as a plain `role: user` account
+- `devadmin` bootstraps (first use only) a `role: admin` account
+- any other username/email signs in as that account, creating a plain `user` one if it doesn't
+  exist yet — handy for testing as a specific candidate/employer
 
 ## Documentation
 

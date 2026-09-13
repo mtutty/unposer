@@ -41,7 +41,7 @@ router.use(raw({ type: '*/*' }));
  * is enough to route correctly without the token itself carrying any type marker.
  */
 router.post('/inbound-email', async (req, res) => {
-  if (!config.email.enabled) {
+  if (!config.email.configured) {
     // Nothing configured yet — safe no-op rather than a 5xx that trains Resend to keep retrying.
     res.status(200).json({ ok: true, skipped: 'email gateway not configured' });
     return;

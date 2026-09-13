@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { Resend } from 'resend';
 import { db } from '../db/connection';
 import { config } from '../config';
@@ -11,6 +13,40 @@ function resend(): Resend {
     client = new Resend(config.email.resendApiKey);
   }
   return client;
+}
+
+/**
+ * Writes one full email as a .txt file under config.email.spoolDir instead of actually sending
+ * it — every outbound call in this file goes through here whenever `config.email.enabled` is
+ * false (always outside NODE_ENV=production, regardless of what Resend creds happen to be
+ * configured — see that config comment). Replaces the old truncated-to-80-chars console.log: the
+ * whole point is being able to open the file and read the real content. Best-effort like every
+ * other send path here — a spool failure (e.g. an unwritable dir) logs and moves on rather than
+ * failing the turn that already succeeded and was persisted.
+ */
+function spoolEmail(params: { to: string; subject: string; body: string; replyTo?: string; headers?: Record<string, string> }): void {
+  try {
+    fs.mkdirSync(config.email.spoolDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeTo = params.to.replace(/[^a-z0-9@._-]/gi, '_');
+    const file = path.join(config.email.spoolDir, `${stamp}_${safeTo}.txt`);
+
+    const lines = [
+      `To: ${params.to}`,
+      `From: ${config.email.fromAddress}`,
+      params.replyTo ? `Reply-To: ${params.replyTo}` : null,
+      ...Object.entries(params.headers ?? {}).map(([key, value]) => `${key}: ${value}`),
+      `Subject: ${params.subject}`,
+      '',
+      params.body,
+      ''
+    ].filter((line): line is string => line !== null);
+
+    fs.writeFileSync(file, lines.join('\n'), 'utf8');
+    console.log(`[email.service] spooled (not sent — config.email.enabled is false) to ${file}`);
+  } catch (err: any) {
+    console.error('[email.service] failed to spool email to disk:', err.message || err);
+  }
 }
 
 interface SendParams {
@@ -37,8 +73,9 @@ export class EmailService {
    * email, and silence nudges — but deliberately NOT for the response to a reply typed into the
    * in-app inbox view (see inbox.routes.ts POST /reply, which never calls this).
    *
-   * No-ops (logs only) when config.email.enabled is false, so nothing breaks locally without a
-   * Resend account — same safe-default pattern as devAuth.enabled.
+   * Spools to disk instead of sending (see spoolEmail above) whenever config.email.enabled is
+   * false — always true outside a real production deploy, so nothing breaks locally and no local/
+   * test run ever emails a real address.
    */
   async deliver(thread: ConversationThread, message: Message, opts: { inReplyToMessageId?: string | null } = {}): Promise<void> {
     const stepDef = getStep(thread.step);
@@ -85,11 +122,12 @@ export class EmailService {
    * admin created an account for them and links back to /login. Unlike `deliver`/`deliverForTopic`
    * this has no `conversation_threads`/`topic_thread` row to hang a reply-to/thread-id off of (an
    * invited user hasn't started onboarding yet), so it talks to Resend directly rather than going
-   * through the shared `send` helper above. Same disabled/no-op safe default as everything else
-   * in this file.
+   * through the shared `send` helper above. Same spool-instead-of-send safe default as everything
+   * else in this file — see spoolEmail.
    */
   async sendInvite(email: string, customMessage?: string): Promise<void> {
     const loginUrl = `${config.frontendUrl}/login`;
+    const subject = "You're invited to Unposer";
     const body = [
       "You've been invited to Unposer — a career platform built for people, not pipelines. " +
         'No keyword bingo, no resume lottery, no ATS black box. Just real conversations that let ' +
@@ -103,7 +141,7 @@ export class EmailService {
       .join('\n');
 
     if (!config.email.enabled) {
-      console.log(`[email.service] (disabled — no RESEND_API_KEY/RESEND_WEBHOOK_SECRET) would send invite to ${email}: ${body}`);
+      spoolEmail({ to: email, subject, body });
       return;
     }
 
@@ -111,7 +149,7 @@ export class EmailService {
       const { error } = await resend().emails.send({
         from: config.email.fromAddress,
         to: email,
-        subject: "You're invited to Unposer",
+        subject,
         text: body
       });
 
@@ -127,17 +165,18 @@ export class EmailService {
   }
 
   private async send(params: SendParams): Promise<void> {
-    if (!config.email.enabled) {
-      console.log(
-        `[email.service] (disabled — no RESEND_API_KEY/RESEND_WEBHOOK_SECRET) would send ${params.logLabel} ` +
-          `to user ${params.userId}: ${params.body.slice(0, 80)}${params.body.length > 80 ? '…' : ''}`
-      );
-      return;
-    }
-
     const user = await db('users').where({ id: params.userId }).first();
     if (!user) {
       console.warn(`[email.service] no user found for ${params.userId}, skipping send`);
+      return;
+    }
+
+    const replyTo = `reply+${params.inboundToken}@${config.email.inboundDomain}`;
+    const subject = `${params.inReplyTo ? 'Re: ' : ''}${params.subject} — Unposer`;
+    const headers = params.inReplyTo ? { 'In-Reply-To': params.inReplyTo, References: params.inReplyTo } : undefined;
+
+    if (!config.email.enabled) {
+      spoolEmail({ to: user.email, subject, body: params.body, replyTo, headers });
       return;
     }
 
@@ -145,10 +184,10 @@ export class EmailService {
       const { data, error } = await resend().emails.send({
         from: config.email.fromAddress,
         to: user.email,
-        replyTo: `reply+${params.inboundToken}@${config.email.inboundDomain}`,
-        subject: `${params.inReplyTo ? 'Re: ' : ''}${params.subject} — Unposer`,
+        replyTo,
+        subject,
         text: params.body,
-        headers: params.inReplyTo ? { 'In-Reply-To': params.inReplyTo, References: params.inReplyTo } : undefined
+        headers
       });
 
       if (error) {

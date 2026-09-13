@@ -1,6 +1,7 @@
 node_modules/
 dist/
 uploads/
+email-outbox/
 .env
 *.log
 .DS_Store

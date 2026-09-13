@@ -28,16 +28,14 @@ export const config = {
     expiryDays: 7
   },
 
-  devAuth: {
-    enabled: process.env.DEV_AUTH_ENABLED === 'true',
-    username: process.env.DEV_AUTH_USERNAME || 'devuser',
-    password: process.env.DEV_AUTH_PASSWORD || 'devpass',
-    // Second dev-bypass identity, distinct from the one above, so local/dev environments can
-    // exercise admin-only screens (see routes/admin.routes.ts) without wiring up real Google/
-    // GitHub OIDC. Maps to its own user row (role: 'admin') in AuthService.devLogin — never the
-    // same oidc_subject as the regular dev user.
-    adminUsername: process.env.DEV_AUTH_ADMIN_USERNAME || 'devadmin',
-    adminPassword: process.env.DEV_AUTH_ADMIN_PASSWORD || 'devadminpass'
+  // Test login — type any username/email, no password, and sign in as that account (creating a
+  // plain role:'user' one if it doesn't exist yet). Enabled by default, since this app's default
+  // state is a local checkout being developed/tested against; a real deployment turns it off via
+  // an explicit `TEST_LOGIN_ENABLED=false` environment override in docker-compose.production.yml
+  // rather than relying on whatever happens to be in a shared .env file (see that file's comment
+  // for why the override lives there instead of just documenting "set this to false in prod").
+  testLogin: {
+    enabled: process.env.TEST_LOGIN_ENABLED !== 'false'
   },
 
   // Invitation-only mode: when enabled, OIDC self-registration is blocked for any email that
@@ -68,10 +66,7 @@ export const config = {
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
 
   // Real email gateway (Resend, both inbound and outbound — see email.service.ts and
-  // webhooks.routes.ts). `enabled` is the safe-default gate, same pattern as devAuth.enabled:
-  // with no credentials configured (the out-of-the-box dev state) the webhook route no-ops and
-  // EmailService logs instead of calling Resend, so nothing breaks locally without a Resend
-  // account.
+  // webhooks.routes.ts).
   email: {
     resendApiKey: process.env.RESEND_API_KEY || '',
     webhookSecret: process.env.RESEND_WEBHOOK_SECRET || '',
@@ -79,7 +74,20 @@ export const config = {
     // Reply-To addresses and inbound-webhook token extraction both key off this.
     inboundDomain: process.env.EMAIL_INBOUND_DOMAIN || '',
     fromAddress: process.env.EMAIL_FROM_ADDRESS || 'Unposer <onboarding@resend.dev>',
-    enabled: !!(process.env.RESEND_API_KEY && process.env.RESEND_WEBHOOK_SECRET)
+    // Credentials present at all — gates the inbound webhook route (accepting mail isn't the
+    // "does this leak" risk sending is, so this stays creds-based regardless of NODE_ENV; lets
+    // scripts/simulate-inbound-email.ts exercise that path locally with real Resend creds).
+    configured: !!(process.env.RESEND_API_KEY && process.env.RESEND_WEBHOOK_SECRET),
+    // Outbound sending additionally requires NODE_ENV=production — local/test environments must
+    // never actually send email regardless of what creds happen to be sitting in .env (a stray
+    // real key should never turn "run the tests" into "email real people"). EmailService spools
+    // the full message to disk instead whenever this is false — see its spoolEmail/spoolDir.
+    enabled: process.env.NODE_ENV === 'production' && !!(process.env.RESEND_API_KEY && process.env.RESEND_WEBHOOK_SECRET),
+    // Where spooled (not actually sent) emails get written as one .txt file each — see
+    // EmailService.spoolEmail. Defaults to a path inside the bind-mounted backend/ source dir in
+    // dev (docker-compose.override.yml mounts the whole tree), so spooled mail shows up directly
+    // on the host at backend/email-outbox/ without any extra volume wiring.
+    spoolDir: process.env.EMAIL_SPOOL_DIR || '/app/email-outbox'
   },
 
   // Weekly re-engagement scheduler (spec §3.5, Iteration 9). Off by default even when Resend is

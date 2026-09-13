@@ -6,17 +6,20 @@ jest.mock('resend', () => ({
   Resend: jest.fn().mockImplementation(() => ({ emails: { send: mockSend } }))
 }));
 
-jest.mock('../config', () => ({
-  config: {
-    email: {
-      resendApiKey: 'test-key',
-      webhookSecret: 'test-secret',
-      inboundDomain: 'reply.example.com',
-      fromAddress: 'Unposer <onboarding@example.com>',
-      enabled: true
-    }
+jest.mock('fs');
+import fs from 'fs';
+
+const mockConfig = {
+  email: {
+    resendApiKey: 'test-key',
+    webhookSecret: 'test-secret',
+    inboundDomain: 'reply.example.com',
+    fromAddress: 'Unposer <onboarding@example.com>',
+    enabled: true,
+    spoolDir: '/tmp/email-outbox-test'
   }
-}));
+};
+jest.mock('../config', () => ({ config: mockConfig }));
 
 import { EmailService } from './email.service';
 import { TopicThread } from '../types';
@@ -104,5 +107,61 @@ describe('EmailService.deliverForTopic', () => {
 
     await expect(service.deliverForTopic(topicThreadFixture(), 'body')).resolves.toBeUndefined();
     expect(mockSend).not.toHaveBeenCalled();
+  });
+});
+
+describe('EmailService — spooling instead of sending (config.email.enabled === false)', () => {
+  let service: EmailService;
+  let builder: ReturnType<typeof makeBuilder>;
+  const mockDb = db as unknown as jest.Mock;
+  const mockMkdir = fs.mkdirSync as jest.Mock;
+  const mockWrite = fs.writeFileSync as jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockConfig.email.enabled = false;
+    service = new EmailService();
+    builder = makeBuilder();
+    mockDb.mockReturnValue(builder);
+    builder.first.mockResolvedValue({ id: 'user-1', email: 'candidate@example.com' });
+  });
+
+  afterEach(() => {
+    mockConfig.email.enabled = true;
+  });
+
+  it('deliverForTopic writes the full message to a file under spoolDir instead of calling Resend', async () => {
+    await service.deliverForTopic(topicThreadFixture({ question_id: 'Q1' }), 'Tell me more about that.');
+
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockMkdir).toHaveBeenCalledWith('/tmp/email-outbox-test', { recursive: true });
+
+    const [filePath, content] = mockWrite.mock.calls[0];
+    expect(filePath).toContain('/tmp/email-outbox-test/');
+    expect(filePath).toContain('candidate@example.com');
+    expect(content).toContain('To: candidate@example.com');
+    expect(content).toContain('Reply-To: reply+tok-123@reply.example.com');
+    expect(content).toContain('Subject: The Unofficial Curriculum — Unposer');
+    expect(content).toContain('Tell me more about that.');
+  });
+
+  it('sendInvite writes the full invite body to a file instead of calling Resend', async () => {
+    await service.sendInvite('someone@example.com', 'Come check this out.');
+
+    expect(mockSend).not.toHaveBeenCalled();
+    const [filePath, content] = mockWrite.mock.calls[0];
+    expect(filePath).toContain('someone@example.com');
+    expect(content).toContain('To: someone@example.com');
+    expect(content).toContain("Subject: You're invited to Unposer");
+    expect(content).toContain('Come check this out.');
+  });
+
+  it('does not throw if the spool directory cannot be created', async () => {
+    mockMkdir.mockImplementationOnce(() => {
+      throw new Error('EACCES');
+    });
+
+    await expect(service.deliverForTopic(topicThreadFixture(), 'body')).resolves.toBeUndefined();
+    expect(mockWrite).not.toHaveBeenCalled();
   });
 });

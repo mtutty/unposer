@@ -18,6 +18,10 @@ dist/
 # backend/.gitignore also excludes it — kept here too since it holds real user file uploads).
 backend/uploads/*
 
+# Spooled (not actually sent) outbound emails — see config/index.ts email.spoolDir and
+# backend/.gitignore.
+backend/email-outbox/*
+
 # Logs
 *.log
 npm-debug.log*

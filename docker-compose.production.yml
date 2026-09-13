@@ -68,6 +68,15 @@ services:
 
   api:
     restart: unless-stopped
+    # Hard override, not just a documented "set this to false in .env" convention — the base
+    # docker-compose.yml's `api` service already merges `.env` via env_file, and a stray/shared
+    # .env value (or a fresh checkout still on .env.template's dev default) must never be able to
+    # leave the no-password test-login bypass reachable on a real deployment. Compose merges
+    # `environment` per-key across files (unlike `ports`/`volumes`, which append), so this one
+    # entry wins regardless of what TEST_LOGIN_ENABLED is set to in .env. See config/index.ts's
+    # testLogin and AuthService.testLogin.
+    environment:
+      - TEST_LOGIN_ENABLED=false
 
   postgres:
     restart: unless-stopped

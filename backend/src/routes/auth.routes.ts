@@ -8,9 +8,8 @@ import { z } from 'zod';
 const router = Router();
 const authService = new AuthService();
 
-const devLoginSchema = z.object({
-  username: z.string(),
-  password: z.string()
+const testLoginSchema = z.object({
+  username: z.string()
 });
 
 const OAUTH_STATE_COOKIE = 'oauth_state';
@@ -21,15 +20,18 @@ router.get('/providers', (req, res) => {
     providers: authService.getAvailableProviders(),
     // Login page indicator — see config.inviteOnly. Purely informational; the actual gate lives
     // in AuthService.upsertOidcUser, not here.
-    inviteOnly: config.inviteOnly.enabled
+    inviteOnly: config.inviteOnly.enabled,
+    // Login page indicator for whether to show the no-password test-login form at all — see
+    // config.testLogin.enabled. The actual gate lives in AuthService.testLogin, not here.
+    testLogin: config.testLogin.enabled
   });
 });
 
-// Dev bypass login
-router.post('/dev-login', validate(devLoginSchema), async (req, res, next) => {
+// No-password login bypass for local dev/QA — see AuthService.testLogin.
+router.post('/test-login', validate(testLoginSchema), async (req, res, next) => {
   try {
-    const { username, password } = req.body;
-    const { token, user } = await authService.devLogin(username, password);
+    const { username } = req.body;
+    const { token, user } = await authService.testLogin(username);
 
     res.cookie('session_token', token, {
       httpOnly: true,

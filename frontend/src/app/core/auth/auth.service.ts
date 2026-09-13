@@ -12,8 +12,10 @@ export class AuthService {
 
   constructor(private api: ApiService) {}
 
-  devLogin(username: string, password: string): Observable<{ user: User }> {
-    return this.api.post<{ user: User }>('/auth/dev-login', { username, password }).pipe(
+  /** No-password login bypass for local dev/QA — type any username or email, no password. See
+   *  AuthService.testLogin on the backend. */
+  testLogin(username: string): Observable<{ user: User }> {
+    return this.api.post<{ user: User }>('/auth/test-login', { username }).pipe(
       tap(response => {
         this.currentUser.set(response.user);
         this.isAuthenticated.set(true);
@@ -39,8 +41,8 @@ export class AuthService {
     );
   }
 
-  getProviders(): Observable<{ providers: string[]; inviteOnly: boolean }> {
-    return this.api.get<{ providers: string[]; inviteOnly: boolean }>('/auth/providers');
+  getProviders(): Observable<{ providers: string[]; inviteOnly: boolean; testLogin: boolean }> {
+    return this.api.get<{ providers: string[]; inviteOnly: boolean; testLogin: boolean }>('/auth/providers');
   }
 
   /** Self-service cancel, offered from the "pending approval" waiting page — see

@@ -3,6 +3,7 @@ jest.mock('../config', () => ({
     frontendUrl: 'http://localhost:4200',
     nodeEnv: 'test',
     inviteOnly: { enabled: false },
+    testLogin: { enabled: true },
     oidc: {
       google: { clientId: '', clientSecret: '' },
       github: { clientId: '', clientSecret: '' }
@@ -54,7 +55,7 @@ describe('auth.routes', () => {
       const res = await request(app).get('/providers');
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ providers: ['google'], inviteOnly: false });
+      expect(res.body).toEqual({ providers: ['google'], inviteOnly: false, testLogin: true });
     });
 
     it('reflects config.inviteOnly.enabled', async () => {
@@ -68,21 +69,21 @@ describe('auth.routes', () => {
     });
   });
 
-  describe('POST /dev-login', () => {
-    it('rejects a body missing username/password before ever calling the service', async () => {
-      const res = await request(app).post('/dev-login').send({ username: 'devuser' });
+  describe('POST /test-login', () => {
+    it('rejects a body missing username before ever calling the service', async () => {
+      const res = await request(app).post('/test-login').send({});
 
       expect(res.status).toBe(400);
-      expect(mockAuthService.devLogin).not.toHaveBeenCalled();
+      expect(mockAuthService.testLogin).not.toHaveBeenCalled();
     });
 
     it('sets an httpOnly session_token cookie and returns the user on success', async () => {
-      mockAuthService.devLogin.mockResolvedValue({
+      mockAuthService.testLogin.mockResolvedValue({
         token: 'tok-123',
         user: { id: 'u1', email: 'dev@example.com', name: 'Dev User', role: 'user' } as any
       });
 
-      const res = await request(app).post('/dev-login').send({ username: 'devuser', password: 'devpass' });
+      const res = await request(app).post('/test-login').send({ username: 'devuser' });
 
       expect(res.status).toBe(200);
       expect(res.body.user.email).toBe('dev@example.com');
@@ -91,10 +92,10 @@ describe('auth.routes', () => {
       expect(cookies.some((c) => /HttpOnly/i.test(c))).toBe(true);
     });
 
-    it('propagates a service AppError (e.g. dev auth disabled) as its status/code, not a 500', async () => {
-      mockAuthService.devLogin.mockRejectedValue(new AppError('UNAUTHORIZED', 'Dev auth is not enabled', 401));
+    it('propagates a service AppError (e.g. test login disabled) as its status/code, not a 500', async () => {
+      mockAuthService.testLogin.mockRejectedValue(new AppError('UNAUTHORIZED', 'Test login is not enabled', 401));
 
-      const res = await request(app).post('/dev-login').send({ username: 'x', password: 'y' });
+      const res = await request(app).post('/test-login').send({ username: 'x' });
 
       expect(res.status).toBe(401);
       expect(res.body.error.code).toBe('UNAUTHORIZED');

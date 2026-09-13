@@ -24,16 +24,17 @@ docker-compose logs -f api        # confirm clean boot, no crash loop
 ```
 
 - App: `http://localhost` (nginx) — dev mode also exposes `:4200` (Angular), `:3000` (API), `:5432` (Postgres).
-- Dev login: `devuser` / `devpass` (bypasses OIDC entirely — see `DEV_AUTH_ENABLED` in `.env`).
-- For anything that needs a *second* account (admin-vs-candidate, or a clean fresh candidate),
-  either register via Google/GitHub OIDC if configured, or create a second row directly:
-  ```bash
-  docker-compose exec postgres psql -U appuser -d appdb -c \
-    "select id, email, role, status from users;"
-  ```
-- Real email sending is **off** unless `RESEND_API_KEY`/`RESEND_WEBHOOK_SECRET` are set — leave
-  them unset for this walkthrough unless you specifically want to test real delivery (§6 covers
-  the safe way to exercise the email path without a real inbox).
+- Test login: type any username/email on the login page, no password — bypasses OIDC entirely
+  (see `TEST_LOGIN_ENABLED` in `.env`, on by default and forced off in production regardless).
+  `devuser` signs in as a plain `role: user` account; `devadmin` bootstraps a `role: admin`
+  account (first use only); any other username/email signs in as that account (creating a plain
+  `user` one if it doesn't exist yet) — this is also how to get a *second*, clean fresh-candidate
+  account for a walkthrough, no OIDC or direct DB row needed.
+- Real email sending never actually happens outside `NODE_ENV=production`, regardless of whether
+  `RESEND_API_KEY`/`RESEND_WEBHOOK_SECRET` are set — every outbound message is spooled as a
+  full-content `.txt` file under `EMAIL_SPOOL_DIR` (default `backend/email-outbox/` on the host)
+  instead, so you can always read exactly what would have been sent (§6 covers exercising the
+  *inbound* email path, which real Resend creds do still enable locally).
 - The weekly scheduler is **off** unless `SCHEDULER_ENABLED=true` — leave it off for the
   walkthrough; §9 covers how to verify it separately without leaving it running.
 
@@ -45,7 +46,7 @@ This is the core, does-the-product-work walkthrough. Do it once start-to-finish 
 this is deliberately the "few minutes to an hour" fast path the personality engine is required to
 handle honestly (see §3's Sketch-tier caveat), not the multi-day depth path (§4).
 
-1. **Log in** (`devuser`/`devpass` or OIDC). Land on `/dashboard`.
+1. **Log in** (`devuser` via test login, or OIDC). Land on `/dashboard`.
    - *Expect:* two rail stages, "Tell Your Story" and "Interview Yourself", read from
      `GET /api/flow/steps` — not hardcoded. Nothing under "Interview Yourself" is clickable yet.
 
@@ -120,9 +121,9 @@ handle honestly (see §3's Sketch-tier caveat), not the multi-day depth path (§
      configured. This is intentional (see CLAUDE.md's "Email gateway" section) so a candidate who
      answers in-app doesn't see the next question duplicated in real email until the next nudge.
 3. On **Your Stories**, use "continue this topic by email" mid-conversation.
-   - *Expect:* the currently-open topic's question is (re-)sent, this time as a real send attempt
-     — with no Resend credentials configured, check `docker-compose logs api` for a
-     `[email.service] (disabled...)` log line rather than an actual send.
+   - *Expect:* the currently-open topic's question is (re-)sent — outside `NODE_ENV=production`
+     this always spools instead of really sending (see above), so check `backend/email-outbox/`
+     for a new `.txt` file with the full message rather than an actual send.
 4. **Simulate a real inbound reply without needing a real mailbox:**
    ```bash
    docker-compose exec api npm run simulate:inbound-email -- \
@@ -370,7 +371,7 @@ Don't file these as bugs — they're documented decisions, not oversights:
 
 - **Calibration console** — spec'd (`docs/calibration-console-spec.md`), not built. No numeric
   score renders anywhere as a direct consequence (Iteration 7 notes).
-- **LinkedIn OIDC** — not implemented; dev-login bypass remains the only path if Google/GitHub
+- **LinkedIn OIDC** — not implemented; the test-login bypass remains the only path if Google/GitHub
   aren't configured.
 - **Step 6.5 "Career Debrief"** — proposed, not built. Its market-data half is a hard block
   pending a real external data source (see `docs/labor-market-data-source-catalog.md`).

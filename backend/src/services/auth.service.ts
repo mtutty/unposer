@@ -242,40 +242,53 @@ export class AuthService {
     return { token: session.token, user };
   }
 
-  async devLogin(username: string, password: string): Promise<{ token: string; user: User }> {
-    if (!config.devAuth.enabled) {
-      throw new AppError('UNAUTHORIZED', 'Dev auth is not enabled', 401);
+  /**
+   * No-password login bypass for local dev/QA — type any username or email and sign in as that
+   * account, no real OIDC needed. `config.testLogin.enabled` is the only gate (forced off in
+   * production — see docker-compose.production.yml); there's no separate credential check any
+   * more, so this must never be reachable outside a trusted local/test environment.
+   *
+   * A bare word with no "@" (e.g. "devuser") is expanded to `<word>@example.com` so typing a
+   * short name still works the way it always has. "devadmin" specifically bootstraps a
+   * role:'admin' account the first time it's used — with no real users yet, this is the only way
+   * to reach admin-only screens locally without hand-editing the database — but only on first
+   * insert; an admin later demoting that user via the admin API is never silently re-promoted on
+   * a later login. Any other identifier — a real email, or any other bare word — creates (or logs
+   * into) a plain role:'user' account, so this doubles as "test as any user": type an existing
+   * candidate's/employer's email to pick up their real account and role.
+   */
+  async testLogin(identifier: string): Promise<{ token: string; user: User }> {
+    if (!config.testLogin.enabled) {
+      throw new AppError('UNAUTHORIZED', 'Test login is not enabled', 401);
     }
 
-    // Two dev-bypass identities, so local/dev environments can reach admin-only screens (see
-    // routes/admin.routes.ts) without wiring up real Google/GitHub OIDC. `role: 'admin'` is only
-    // set on first insert — an admin later demoting this user via the admin API isn't silently
-    // re-promoted on next dev-login.
-    let subject: string;
-    let seed: { email: string; name: string; role: 'admin' | 'user' };
-    if (username === config.devAuth.username && password === config.devAuth.password) {
-      subject = 'dev-user';
-      seed = { email: 'dev@example.com', name: 'Dev User', role: 'user' };
-    } else if (username === config.devAuth.adminUsername && password === config.devAuth.adminPassword) {
-      subject = 'dev-admin';
-      seed = { email: 'devadmin@example.com', name: 'Dev Admin', role: 'admin' };
-    } else {
-      throw new AppError('UNAUTHORIZED', 'Invalid credentials', 401);
+    const raw = identifier.trim();
+    if (!raw) {
+      throw new AppError('VALIDATION_ERROR', 'Enter a username or email', 400);
     }
 
-    // Create or get the dev user for this identity
-    let user = await db('users')
-      .where({ oidc_provider: 'dev', oidc_subject: subject })
-      .first();
+    const email = (raw.includes('@') ? raw : `${raw}@example.com`).toLowerCase();
+
+    let user = await db('users').whereRaw('lower(email) = ?', [email]).first();
 
     if (!user) {
+      const role = raw.toLowerCase() === 'devadmin' ? 'admin' : 'user';
+      const localPart = email.split('@')[0];
+      const name =
+        localPart
+          .split(/[._-]+/)
+          .filter(Boolean)
+          .map((part) => part[0].toUpperCase() + part.slice(1))
+          .join(' ') || 'Test User';
+
       [user] = await db('users')
         .insert({
-          email: seed.email,
-          name: seed.name,
-          oidc_provider: 'dev',
-          oidc_subject: subject,
-          role: seed.role
+          email,
+          name,
+          oidc_provider: 'test',
+          oidc_subject: email,
+          role,
+          status: 'active'
         })
         .returning('*');
     }
