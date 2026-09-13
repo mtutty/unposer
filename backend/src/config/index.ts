@@ -87,7 +87,16 @@ export const config = {
     // EmailService.spoolEmail. Defaults to a path inside the bind-mounted backend/ source dir in
     // dev (docker-compose.override.yml mounts the whole tree), so spooled mail shows up directly
     // on the host at backend/email-outbox/ without any extra volume wiring.
-    spoolDir: process.env.EMAIL_SPOOL_DIR || '/app/email-outbox'
+    spoolDir: process.env.EMAIL_SPOOL_DIR || '/app/email-outbox',
+    // Public "ask us anything" address surfaced on /how-your-profile-works (contact@unposer.com,
+    // not the reply subdomain above — a candidate/recruiter reading that page should never see
+    // the technical inbound domain). Requires its own domain verified for *receiving* in Resend
+    // (see infra/README.md's "Contact address forwarding" section) — same webhook endpoint as
+    // the reply+token flow, routed by recipient address rather than a token. Forwards verbatim to
+    // contactForwardTo rather than entering ConversationService; there's no thread, no user, no
+    // conversation model involved, just a real person's question reaching a real inbox.
+    contactAddress: process.env.CONTACT_EMAIL_ADDRESS || '',
+    contactForwardTo: process.env.CONTACT_FORWARD_TO || ''
   },
 
   // Weekly re-engagement scheduler (spec §3.5, Iteration 9). Off by default even when Resend is

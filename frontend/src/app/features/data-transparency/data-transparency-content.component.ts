@@ -15,6 +15,9 @@ interface FaqSection {
 // why. Content is drawn from docs/personality-analysis-engine-spec.md and the onboarding flow
 // spec; keep it in sync with those when either changes rather than letting this page drift into
 // its own account of how the system works.
+//
+// `a` fields are rendered via [innerHTML] below (one item currently uses a plain <a mailto:>
+// link) — safe because this array is static, developer-authored copy, never user input.
 const SECTIONS: FaqSection[] = [
   {
     title: 'What we ask, and why',
@@ -116,7 +119,7 @@ const SECTIONS: FaqSection[] = [
       },
       {
         q: 'Is that distinction just an excuse to hide things?',
-        a: 'It\'s a testable claim, and you\'re welcome to test it: if any answer on this page reads as evasive rather than as "this specific number would only be useful for gaming it," that\'s a bug in the page, not an intentional gap — tell us and we\'ll either publish the number or explain concretely why not.'
+        a: 'It\'s a testable claim, and you\'re welcome to test it: if any answer on this page reads as evasive rather than as "this specific number would only be useful for gaming it," that\'s a bug in the page, not an intentional gap. Want to know more? Email us your questions — <a href="mailto:contact@unposer.com">contact@unposer.com</a>.'
       }
     ]
   },
@@ -161,7 +164,7 @@ const SECTIONS: FaqSection[] = [
                 <span class="q">{{ item.q }}</span>
                 <span class="chevron" aria-hidden="true"></span>
               </summary>
-              <p class="a">{{ item.a }}</p>
+              <p class="a" [innerHTML]="item.a"></p>
             </details>
           }
         </section>
@@ -237,6 +240,10 @@ const SECTIONS: FaqSection[] = [
         padding: 0 1.25rem 1.25rem;
         color: var(--ink-soft);
         line-height: 1.6;
+
+        a {
+          color: var(--brass-strong);
+        }
       }
 
       @media (max-width: 560px) {

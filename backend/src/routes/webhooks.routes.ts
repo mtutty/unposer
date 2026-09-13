@@ -92,6 +92,35 @@ router.post('/inbound-email', async (req, res) => {
   }
 
   try {
+    // Contact-address forwarding (config.email.contactAddress/contactForwardTo) — a fixed
+    // address on the main domain (e.g. contact@unposer.com), not a per-thread reply+token
+    // address, so it's checked by exact recipient match before the token pattern below rather
+    // than folded into it. No thread lookup, no ConversationService: this is a real question
+    // going straight to a real inbox, not conversation input.
+    if (
+      config.email.contactAddress &&
+      data.to.some((addr) => addr.toLowerCase() === config.email.contactAddress.toLowerCase())
+    ) {
+      let contactBody = data.text;
+      if (contactBody === undefined || config.nodeEnv === 'production') {
+        const { data: fullEmail, error } = await resend().emails.receiving.get(data.email_id);
+        if (error || !fullEmail) {
+          console.error(`[webhooks.routes] failed to fetch received contact email ${data.email_id}:`, error);
+          res.status(200).json({ ok: true, skipped: 'could not fetch contact email body' });
+          return;
+        }
+        contactBody = fullEmail.text || '';
+      }
+
+      await emailService.forwardContactMessage({
+        from: data.from,
+        subject: data.subject,
+        text: stripQuotedReply(contactBody || '') || contactBody || ''
+      });
+      res.status(200).json({ ok: true });
+      return;
+    }
+
     const domain = config.email.inboundDomain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const tokenPattern = new RegExp(`^reply\\+([0-9a-f-]{36})@${domain}$`, 'i');
     const tokenMatch = data.to.map((addr) => addr.match(tokenPattern)).find((m) => m);

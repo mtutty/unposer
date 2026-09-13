@@ -164,6 +164,46 @@ export class EmailService {
     }
   }
 
+  /**
+   * Contact-address forwarding (see config.email.contactAddress/contactForwardTo and
+   * webhooks.routes.ts's inbound-email handler, which routes here by recipient address rather
+   * than by thread token before it ever reaches the reply+token matching below). No thread, no
+   * user, no ConversationService involved — this is a real question from a real person going
+   * straight to a real inbox, verbatim. `replyTo` is the original sender, so replying from the
+   * forwarded inbox goes straight back to them rather than to Unposer's own address.
+   */
+  async forwardContactMessage(params: { from: string; subject: string; text: string }): Promise<void> {
+    const to = config.email.contactForwardTo;
+    if (!to) {
+      console.warn('[email.service] contact message received but CONTACT_FORWARD_TO is unset — dropping');
+      return;
+    }
+
+    const subject = `[Unposer contact] ${params.subject || '(no subject)'}`;
+    const body = `From: ${params.from}\n\n${params.text}`;
+
+    if (!config.email.enabled) {
+      spoolEmail({ to, subject, body, replyTo: params.from });
+      return;
+    }
+
+    try {
+      const { error } = await resend().emails.send({
+        from: config.email.fromAddress,
+        to,
+        replyTo: params.from,
+        subject,
+        text: body
+      });
+
+      if (error) {
+        console.error('[email.service] Resend contact-forward send failed:', error);
+      }
+    } catch (err: any) {
+      console.error('[email.service] unexpected error forwarding contact message:', err.message || err);
+    }
+  }
+
   private async send(params: SendParams): Promise<void> {
     const user = await db('users').where({ id: params.userId }).first();
     if (!user) {
