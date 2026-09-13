@@ -1,7 +1,7 @@
 /**
  * Empirical check for Iteration 3 (docs/personality-engine-implementation-plan.md): drives a real
  * multi-topic deep_prompts session — real DB, real configured LLM (needs LLM_API_KEY in .env) —
- * through TopicConversationService exactly as websocket/server.ts does, to verify the "Done when"
+ * through TopicConversationService exactly as deep-prompts.routes.ts's POST /message does, to verify the "Done when"
  * criteria that unit tests on the selection function in isolation can't: a live session asks
  * Q0/23/24/25 first, then picks by lowest-coverage dimension, never queues two heavy questions
  * back to back, and each topic actually closes. Not part of `npm test`; run manually:

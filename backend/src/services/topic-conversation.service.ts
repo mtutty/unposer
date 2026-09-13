@@ -19,7 +19,8 @@ export interface TopicTurnOutcome {
  * Personality engine (docs/personality-analysis-engine-spec.md §3/§5, tracked in
  * docs/personality-engine-implementation-plan.md Iteration 3). The deep_prompts-only sibling to
  * ConversationService: same external shape (ensureOpeningExchanges/postUserMessage returning
- * Message-shaped payloads) so websocket/server.ts can branch on step without a bigger rewrite,
+ * Message-shaped payloads) so deep-prompts.routes.ts's GET /open and POST /message can call this
+ * service the same way logistics.routes.ts calls ConversationService, without a bigger rewrite,
  * but backed by topic_thread/exchange, not conversation_threads/messages. Logistics is
  * untouched — it keeps using ConversationService exactly as before.
  *
@@ -333,7 +334,7 @@ export class TopicConversationService {
   /** Flow addendum §2: Step 5 completes in flow_progress the moment progression.tier first
    *  reaches Sketch (any dimension at medium confidence) — not a fixed question count. Real tier
    *  lookup as of Iteration 5 (progression.service.ts); the placeholder this replaced ("core set
-   *  closed") is gone. Callers (websocket/server.ts) didn't need to change. */
+   *  closed") is gone. Callers (deep-prompts.routes.ts) didn't need to change. */
   private async isFlowStepComplete(userId: string): Promise<boolean> {
     const row = await db('progression').where({ user_id: userId }).first();
     return !!row && row.tier !== 'none';

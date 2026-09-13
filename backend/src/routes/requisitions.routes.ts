@@ -4,6 +4,7 @@ import { requireAuth, requireEmployer, AuthRequest } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { RequisitionService } from '../services/requisition.service';
 import { RequisitionConversationService } from '../services/requisition-conversation.service';
+import { startSSE, writeSSEEvent } from '../utils/sse';
 
 const router = Router();
 const requisitionService = new RequisitionService();
@@ -68,10 +69,10 @@ router.patch('/:id', validate(updateSchema), async (req: AuthRequest, res, next)
 });
 
 // Phase 2 — org/situational/cultural Q&A (docs/employer-onboarding-spec.md §4). Live-chat-only
-// per spec §2.2, but exposed over REST too (not just the WS branch in websocket/server.ts) for a
-// non-realtime client, mirroring how sandbox/share stay plain REST despite logistics/deep_prompts
-// having a WS transport. requisitionService.get() below doubles as the ownership check — a 404
-// there is this route's only real auth gate beyond requireEmployer.
+// per spec §2.2, over the same POST+SSE interaction model every chat surface in the app now uses
+// (see utils/sse.ts) — no separate WebSocket branch any more. requisitionService.get() below
+// doubles as the ownership check — a 404 there is this route's only real auth gate beyond
+// requireEmployer.
 
 // Resume: full history + thread status. Opens the thread and generates the opener if this is the
 // very first visit, same as ConversationService.ensureOpeningMessage's role for logistics/deep_prompts.
@@ -89,14 +90,28 @@ router.get('/:id/qa', async (req: AuthRequest, res, next) => {
 
 const qaMessageSchema = z.object({ content: z.string().min(1) });
 
+// One turn: runElicitationTurn (via RequisitionConversationService) is a single non-streaming
+// structured call, so there's nothing to chunk — this emits exactly one 'delta' frame carrying
+// the whole reply, then 'done', same envelope shape sandbox.routes.ts uses for its own
+// (genuinely chunked) stream. See utils/sse.ts's header comment for why every chat route speaks
+// this one format regardless of whether its underlying chain actually streams.
 router.post('/:id/qa/message', validate(qaMessageSchema), async (req: AuthRequest, res, next) => {
+  const id = String(req.params.id);
   try {
-    const id = String(req.params.id);
     await requisitionService.get(req.userId!, id); // 404s if not owned by this employer
     const outcome = await requisitionConversation.postUserMessage(id, req.body.content);
-    res.json(outcome);
-  } catch (error) {
-    next(error);
+
+    startSSE(res);
+    writeSSEEvent(res, 'delta', { text: outcome.assistantMessage.content });
+    writeSSEEvent(res, 'done', { message: outcome.assistantMessage, complete: outcome.complete, thread: outcome.thread });
+    res.end();
+  } catch (error: any) {
+    if (res.headersSent) {
+      writeSSEEvent(res, 'error', { code: error.code, message: error.message || 'Something went wrong' });
+      res.end();
+    } else {
+      next(error);
+    }
   }
 });
 

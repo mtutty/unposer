@@ -6,6 +6,7 @@ import { LogisticsService } from '../services/logistics.service';
 import { ConversationService } from '../services/conversation.service';
 import { InboxService } from '../services/inbox.service';
 import { FlowService } from '../services/flow.service';
+import { startSSE, writeSSEEvent } from '../utils/sse';
 
 const router = Router();
 const logisticsService = new LogisticsService();
@@ -38,6 +39,47 @@ router.post('/channel', requireAuth, validate(channelSchema), async (req: AuthRe
     res.json({ channel, messages });
   } catch (error) {
     next(error);
+  }
+});
+
+// App-channel live chat, replacing the old /ws?step=logistics WebSocket connection — one shared
+// interaction model with every other chat surface in the app now (see utils/sse.ts). Resume/open:
+// returns existing history, or generates+persists the opening question on a candidate's first
+// visit — same role chat:resume + ensureOpeningMessage played together over the socket.
+router.get('/open', requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const messages = await conversationService.ensureOpeningMessage(req.userId!, 'logistics', 'app');
+    res.json({ messages });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const messageSchema = z.object({ content: z.string().min(1) });
+
+// One turn: runElicitationTurn is a single non-streaming structured call (see
+// elicitation.chain.ts), so there's nothing to chunk — this emits exactly one 'delta' frame
+// carrying the whole reply, then 'done', same envelope shape sandbox.routes.ts uses for its own
+// (genuinely chunked) stream. See utils/sse.ts's header comment for why every chat route speaks
+// this one format regardless of whether its underlying chain actually streams.
+router.post('/message', requireAuth, validate(messageSchema), async (req: AuthRequest, res, next) => {
+  const userId = req.userId!;
+  try {
+    const outcome = await conversationService.postUserMessage(userId, 'logistics', 'app', req.body.content);
+
+    startSSE(res);
+    writeSSEEvent(res, 'delta', { text: outcome.assistantMessage.content });
+
+    const progress = outcome.complete ? await flowService.completeStep(userId, 'logistics') : undefined;
+    writeSSEEvent(res, 'done', { message: outcome.assistantMessage, complete: outcome.complete, progress });
+    res.end();
+  } catch (error: any) {
+    if (res.headersSent) {
+      writeSSEEvent(res, 'error', { code: error.code, message: error.message || 'Something went wrong' });
+      res.end();
+    } else {
+      next(error);
+    }
   }
 });
 

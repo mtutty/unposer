@@ -253,13 +253,20 @@ On `complete`, flips `job_requisitions.status` to `'active'`.
 
 ### WebSocket vs. REST
 
-**Decided (built both, 2026-09-13):** the candidate side uses a WebSocket for its two live-chat
-steps (`ws://<host>/ws?step=...`); this is also always-live-chat, so `websocket/server.ts` branches
-on a new `requisitionId` query param the way it already branches on `step`, and
-`frontend/src/app/core/websocket/websocket.service.ts`'s `connect()` takes either shape. A REST
-path exists too (`GET/POST /api/requisitions/:id/qa`, `qa/message`) — not a polling chat loop, but
-the resume/read path (used for the completed, read-only transcript) and a non-realtime fallback,
-mirroring how sandbox/share stay REST-only despite logistics/deep_prompts having a WS transport.
+**Superseded (2026-09, days after the WS decision below).** Built as WebSocket first
+(2026-09-13): the candidate side used a WebSocket for its two live-chat steps
+(`ws://<host>/ws?step=...`), so `websocket/server.ts` branched on a new `requisitionId` query
+param the way it already branched on `step`. That whole transport was then removed from the app
+— not just this step — in favor of one POST+SSE interaction model for every chat surface
+(candidate steps, requisition Q&A, and sandbox/share/future virtual-interview chat alike). Michael's
+call, on inspection that nothing in the app actually used a WebSocket's real differentiator
+(server-initiated push independent of the client's own message — `WSServer` was never referenced
+outside its own instantiation) and that SSE fits the app's actual traffic shape better regardless
+of whether a given turn streams token-by-token (sandbox) or resolves as one atomic reply
+(elicitation) — see CLAUDE.md's "Streaming Chat" section for the resulting envelope. Requisition
+Q&A's endpoints are unchanged in shape (`GET /api/requisitions/:id/qa`,
+`POST /api/requisitions/:id/qa/message`); the POST now streams its reply as one `delta` frame
+followed by `done` instead of returning a single WS message or a buffered JSON response.
 
 ---
 

@@ -102,17 +102,17 @@ convergence (2026-09-12, spec §4) — shared `CvfQuadrant` enum, separate table
 - Routes on `requisitions.routes.ts`: `GET /:id/qa` (opens/resumes — folds the spec's originally-
   sketched separate `qa/start` into this one call) and `POST /:id/qa/message`, both behind the
   existing `requisitionService.get()` ownership check.
-- WebSocket: **built both REST and WS** (spec's "WebSocket vs. REST" question decided in favor of
-  WS, per its own "more consistent" flag) — `websocket/server.ts` now branches on a
-  `?requisitionId=` query param alongside its existing `?step=` branch, reusing the same
-  connection/heartbeat/message-dispatch plumbing; completion is signaled with a new
-  `requisition:complete` event (no `FlowProgress`/`step:complete` concept applies to a
-  requisition). `frontend/core/websocket/websocket.service.ts`'s `connect()` now accepts either
-  a step string or `{ requisitionId }`.
-- Frontend: `RequisitionChatPanelComponent` (new, `features/employer/`) — a smaller, separate
-  component rather than a generalization of the candidate's `ChatPanelComponent` (no
-  `FlowProgress`/glyph-tracker concept applies here). `EmployerRequisitionDetailComponent` embeds
-  it while `status === 'draft'`, and falls back to a read-only transcript (`RequisitionService.getQa`,
+- Transport: built as WebSocket initially (spec's "WebSocket vs. REST" question decided in favor
+  of WS, per its own "more consistent" flag at the time). **Superseded days later** by the
+  broader POST+SSE migration (2026-09, see CLAUDE.md's "Streaming Chat" section and the spec's
+  own updated "WebSocket vs. REST" subsection) — WebSocket was removed from the whole app, not
+  just this step, once it became clear nothing in the app actually used a socket's real
+  differentiator. `POST /:id/qa/message` now streams over SSE like every other chat surface.
+- Frontend (not yet migrated to SSE — separate iteration): `RequisitionChatPanelComponent` (new,
+  `features/employer/`) — a smaller, separate component rather than a generalization of the
+  candidate's `ChatPanelComponent` (no `FlowProgress`/glyph-tracker concept applies here).
+  `EmployerRequisitionDetailComponent` embeds it while `status === 'draft'`, and falls back to a
+  read-only transcript (`RequisitionService.getQa`,
   REST) once the thread completes.
 
 **Deviations from the spec doc:** the `qa/start` endpoint was folded into `GET .../qa` (see

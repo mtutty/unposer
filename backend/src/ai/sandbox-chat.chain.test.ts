@@ -83,16 +83,16 @@ describe('streamSandboxChat', () => {
     expect(messages[0].content).toMatch(/never state a raw numeric score/);
   });
 
-  it('streams with the original messages unchanged when the model makes no tool call', async () => {
-    const chunks = await drain(streamSandboxChat(baseParams()));
+  it('streams delta events with the original messages unchanged when the model makes no tool call', async () => {
+    const events = await drain(streamSandboxChat(baseParams()));
 
-    expect(chunks).toEqual(['Hello!']);
+    expect(events).toEqual([{ type: 'delta', text: 'Hello!' }]);
     const [streamedMessages] = mockStreamWithTemperatureFallback.mock.calls[0];
     expect(streamedMessages[streamedMessages.length - 1]).toEqual({ role: 'human', content: 'Tell me about yourself.' });
     expect(mockEvidenceToolInvoke).not.toHaveBeenCalled();
   });
 
-  it('invokes every tool call and folds the results in as extra context ahead of the question when the model asks for evidence', async () => {
+  it('emits tool_call_start/end around every tool call, before any delta, and folds results into context', async () => {
     mockResolveToolCall.mockResolvedValue({
       tool_calls: [
         { name: 'search_candidate_evidence', args: { query: 'leadership' } },
@@ -101,8 +101,15 @@ describe('streamSandboxChat', () => {
     });
     mockEvidenceToolInvoke.mockResolvedValueOnce('evidence about leadership').mockResolvedValueOnce({ content: 'evidence about conflict' });
 
-    await drain(streamSandboxChat(baseParams()));
+    const events = await drain(streamSandboxChat(baseParams()));
 
+    expect(events).toEqual([
+      { type: 'tool_call_start', tool: 'search_candidate_evidence' },
+      { type: 'tool_call_start', tool: 'search_candidate_evidence' },
+      { type: 'tool_call_end', tool: 'search_candidate_evidence' },
+      { type: 'tool_call_end', tool: 'search_candidate_evidence' },
+      { type: 'delta', text: 'Hello!' }
+    ]);
     expect(mockEvidenceToolInvoke).toHaveBeenCalledTimes(2);
     const [streamedMessages] = mockStreamWithTemperatureFallback.mock.calls[0];
     const evidenceMsg = streamedMessages[streamedMessages.length - 2];

@@ -25,7 +25,20 @@ import { ConversationService } from '../services/conversation.service';
 import { InboxService } from '../services/inbox.service';
 import { FlowService } from '../services/flow.service';
 import { errorHandler } from '../middleware/error-handler';
+import { AppError } from '../types';
 import logisticsRoutes from './logistics.routes';
+
+// Parses `event: <type>\ndata: <json>\n\n` frames back into {type, ...data} objects — see
+// utils/sse.ts and sandbox.routes.test.ts's identical helper.
+function parseSSE(text: string) {
+  return text
+    .split('\n\n')
+    .filter(Boolean)
+    .map((frame) => {
+      const [eventLine, dataLine] = frame.split('\n');
+      return { type: eventLine.replace('event: ', ''), ...JSON.parse(dataLine.replace('data: ', '')) };
+    });
+}
 
 const mockLogisticsService = (LogisticsService as jest.MockedClass<typeof LogisticsService>).mock
   .instances[0] as jest.Mocked<LogisticsService>;
@@ -92,6 +105,76 @@ describe('logistics.routes', () => {
       expect(mockInboxService.openThread).toHaveBeenCalledWith('u1');
       expect(mockConversationService.ensureOpeningMessage).not.toHaveBeenCalled();
       expect(res.body.channel).toBe('email');
+    });
+  });
+
+  describe('GET /open', () => {
+    it('opens/resumes the app-channel thread and returns its messages', async () => {
+      mockConversationService.ensureOpeningMessage.mockResolvedValue([{ role: 'assistant', content: 'hi' }] as any);
+
+      const res = await request(app).get('/open').set('x-test-user', 'u1');
+
+      expect(res.status).toBe(200);
+      expect(mockConversationService.ensureOpeningMessage).toHaveBeenCalledWith('u1', 'logistics', 'app');
+      expect(res.body).toEqual({ messages: [{ role: 'assistant', content: 'hi' }] });
+    });
+  });
+
+  describe('POST /message', () => {
+    it('rejects empty content before calling the service', async () => {
+      const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: '' });
+
+      expect(res.status).toBe(400);
+      expect(mockConversationService.postUserMessage).not.toHaveBeenCalled();
+    });
+
+    it('streams one delta frame with the full reply, then done, without completing the step when the turn is not finished', async () => {
+      mockConversationService.postUserMessage.mockResolvedValue({
+        assistantMessage: { id: 'm1', content: 'What timeframe are you targeting?' } as any,
+        complete: false,
+        thread: {} as any
+      });
+
+      const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'Looking for staff eng roles' });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/event-stream/);
+      expect(mockConversationService.postUserMessage).toHaveBeenCalledWith('u1', 'logistics', 'app', 'Looking for staff eng roles');
+      const frames = parseSSE(res.text);
+      expect(frames).toEqual([
+        { type: 'delta', text: 'What timeframe are you targeting?' },
+        { type: 'done', message: { id: 'm1', content: 'What timeframe are you targeting?' }, complete: false }
+      ]);
+      expect(mockFlowService.completeStep).not.toHaveBeenCalled();
+    });
+
+    it('completes the step and includes the resulting progress in "done" when the turn finishes', async () => {
+      mockConversationService.postUserMessage.mockResolvedValue({
+        assistantMessage: { id: 'm2', content: 'All set!' } as any,
+        complete: true,
+        thread: {} as any
+      });
+      mockFlowService.completeStep.mockResolvedValue({ currentStep: 'deep_prompts' } as any);
+
+      const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'done' });
+
+      expect(mockFlowService.completeStep).toHaveBeenCalledWith('u1', 'logistics');
+      const frames = parseSSE(res.text);
+      expect(frames[1]).toEqual({
+        type: 'done',
+        message: { id: 'm2', content: 'All set!' },
+        complete: true,
+        progress: { currentStep: 'deep_prompts' }
+      });
+    });
+
+    it('falls back to a normal JSON error response when the service fails before any bytes are written', async () => {
+      mockConversationService.postUserMessage.mockRejectedValue(new AppError('THREAD_CAP_REACHED', 'This conversation has reached its length limit.', 400));
+
+      const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'hi' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('THREAD_CAP_REACHED');
     });
   });
 });

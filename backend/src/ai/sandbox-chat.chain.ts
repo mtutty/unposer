@@ -58,6 +58,13 @@ function buildSandboxSystemPrompt(profile: ProfileData, audience: 'candidate' | 
     .join('\n\n');
 }
 
+/** Everything a single streamSandboxChat turn can yield — sandbox.routes.ts forwards each one
+ *  straight through as its own SSE frame (see utils/sse.ts). Surfacing tool_call_start/end
+ *  (rather than staying silent about the search_candidate_evidence lookup the way this used to)
+ *  is the point of streaming this chat via the shared SSE model at all: a candidate/recruiter
+ *  waiting on a RAG-backed synthesis sees *why* a turn is taking longer, not just a blank pause. */
+export type SandboxChatEvent = { type: 'tool_call_start' | 'tool_call_end'; tool: string } | { type: 'delta'; text: string };
+
 /**
  * Powers both Step 7 (candidate's own sandbox) and Step 8 (recruiter share link) — intentionally
  * the same function and the same context, because it must be "the exact same chat + RAG
@@ -78,9 +85,9 @@ function buildSandboxSystemPrompt(profile: ProfileData, audience: 'candidate' | 
  * the one chat in the app where the candidate/recruiter holds the conversational initiative and
  * the AI's reply is what most of a turn is spent waiting on, so perceived latency actually
  * matters here (contrast with elicitation/reask, where the human is mid-thought as often as
- * not). See sandbox.routes.ts, which forwards each chunk to the client as it arrives.
+ * not). See sandbox.routes.ts, which forwards each event to the client as it arrives.
  */
-export async function* streamSandboxChat(params: SandboxChatParams): AsyncGenerator<string> {
+export async function* streamSandboxChat(params: SandboxChatParams): AsyncGenerator<SandboxChatEvent> {
   const { profile, history, question, userId, audience = 'candidate' } = params;
   const system = buildSandboxSystemPrompt(profile, audience);
   const baseMessages = [
@@ -95,7 +102,16 @@ export async function* streamSandboxChat(params: SandboxChatParams): AsyncGenera
 
     let messages = baseMessages;
     if (toolCheck.tool_calls && toolCheck.tool_calls.length > 0) {
+      for (const call of toolCheck.tool_calls) {
+        yield { type: 'tool_call_start', tool: call.name };
+      }
+
       const results = await Promise.all(toolCheck.tool_calls.map((call: any) => evidenceTool.invoke(call)));
+
+      for (const call of toolCheck.tool_calls) {
+        yield { type: 'tool_call_end', tool: call.name };
+      }
+
       const evidenceContext = results.map((r: any) => (typeof r === 'string' ? r : r.content)).join('\n\n');
 
       // Folded in as extra context ahead of the question, not replayed as a literal
@@ -108,7 +124,9 @@ export async function* streamSandboxChat(params: SandboxChatParams): AsyncGenera
       ];
     }
 
-    yield* streamWithTemperatureFallback(messages, 0.5);
+    for await (const chunk of streamWithTemperatureFallback(messages, 0.5)) {
+      yield { type: 'delta', text: chunk };
+    }
   } catch (error: any) {
     throw new AppError('LLM_ERROR', `AI request failed: ${error.message || 'unknown error'}`, 502);
   }
@@ -119,8 +137,8 @@ export async function* streamSandboxChat(params: SandboxChatParams): AsyncGenera
  *  same context as the candidate's own sandbox; only the transport to the client differs. */
 export async function runSandboxChat(params: SandboxChatParams): Promise<string> {
   let full = '';
-  for await (const chunk of streamSandboxChat(params)) {
-    full += chunk;
+  for await (const event of streamSandboxChat(params)) {
+    if (event.type === 'delta') full += event.text;
   }
   return full;
 }

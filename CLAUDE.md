@@ -36,7 +36,7 @@ docker-compose down -v            # Full reset (destroys data)
 ## Architecture Principles
 
 **Nginx Reverse Proxy:**
-- Production: the `frontend` container's own bundled nginx serves the built Angular static files and proxies /api and /ws to backend — config is `frontend/nginx.conf`, baked into the image at build time (`COPY` in `frontend/Dockerfile`'s production stage), not bind-mounted, since it never varies by environment
+- Production: the `frontend` container's own bundled nginx serves the built Angular static files and proxies /api to backend — config is `frontend/nginx.conf`, baked into the image at build time (`COPY` in `frontend/Dockerfile`'s production stage), not bind-mounted, since it never varies by environment
 - Development: a separate standalone `nginx` service (base `docker-compose.yml`) proxies to the Angular dev server (hot-reload) and backend — config is `nginx/nginx.dev.conf`, bind-mounted in by `docker-compose.override.yml` (the only thing that makes that service runnable; see the comment on it in `docker-compose.yml`)
 
 **Multi-Stage Builds:**
@@ -166,9 +166,9 @@ A parallel, independent workstream on top of the same `users`/auth model — see
   `runElicitationTurn` engine Step 3 logistics uses, called directly from
   `RequisitionConversationService` (no `requisition-elicitation.chain.ts` wrapper — see that
   service's own comment for why). One thread per requisition (`requisition_threads`/
-  `requisition_messages`, no channel column), reached over the same `/ws` WebSocket as the
-  candidate steps (`?requisitionId=` instead of `?step=`, see WebSocket Events below) or plain
-  REST (`GET /api/requisitions/:id/qa`, `POST /api/requisitions/:id/qa/message`). Completion
+  `requisition_messages`, no channel column), reached over the same POST+SSE model every chat
+  surface in the app uses (`GET /api/requisitions/:id/qa`, `POST /api/requisitions/:id/qa/message`
+  — see "Streaming Chat" below). Completion
   flips `job_requisitions.status` to `'active'` and (best-effort, never gating completion)
   triggers `RequisitionCultureSignalService.regenerate` — an employer's direct description of
   their own team's culture, tagged onto the *same* `CvfQuadrant` vocabulary the candidate side's
@@ -180,21 +180,50 @@ A parallel, independent workstream on top of the same `users`/auth model — see
 Nothing else in this workstream (search, virtual interviews, batch scoring — Phases 3–5) exists
 yet, each blocked on its own flagged product decision in the spec.
 
-## WebSocket Events
+## Streaming Chat (SSE)
 
-Connection: `ws://<host>/ws?step=logistics|deep_prompts` (candidate) or `ws://<host>/ws?requisitionId=<id>` (employer requisition Q&A, Phase 2 — docs/employer-onboarding-spec.md §4, owner-checked server-side) — no token on the query string; the session is an httpOnly cookie that the browser attaches to the same-origin WS handshake automatically, and the server reads it off the upgrade request's `Cookie` header. Live chat exists only for these three connections; sandbox, the public share link, and the employer requisition CRUD are plain REST.
+**No WebSocket in this app any more** — `backend/src/websocket/server.ts` was removed (2026-09).
+Every chat surface (candidate logistics/deep_prompts, employer requisition Q&A, and
+sandbox/share/future virtual-interview chat) now speaks one interaction model: plain `POST`,
+streamed back over Server-Sent Events (`backend/src/utils/sse.ts`'s `startSSE`/`writeSSEEvent`).
+Decided over a WebSocket-based design that predated it: nothing in this app ever used a socket's
+real differentiator (server-initiated push independent of the client's own message — confirmed by
+checking that the old `WSServer` was never referenced outside its own instantiation), and only
+sandbox-style chat has real token-by-token content to stream, so one uniform, simpler transport
+covers every case — a non-streaming chain (`runElicitationTurn`/`runTopicTurn`) just emits one
+`delta` frame with its whole reply before `done`, rather than the client needing two different
+parsers for "the turn that streams" vs. "the turn that doesn't."
 
-**Client → Server:**
-- `chat:message` - User sends message
-- `chat:typing` - Typing indicator (currently unused — single-participant thread)
-- `chat:resume` - Request history (+ progress, for a candidate step) for the connected thread
+Not backed by the browser's native `EventSource` API on the client: `EventSource` is GET-only,
+and every one of these is a POST (the client has to send the message/content as a body). The
+frontend instead reads the SSE framing off a `fetch()` response body's `ReadableStream` — real
+`event:`/`data:` lines, not a bespoke NDJSON scheme (which is what sandbox.routes.ts used before
+this migration).
 
-**Server → Client:**
-- `chat:message` - AI response
-- `progress:update` - Flow progress changed (candidate steps only — a requisition has no FlowProgress)
-- `step:complete` - The connected candidate step just completed
-- `requisition:complete` - The connected requisition's Q&A just completed (job_requisitions.status → 'active')
-- `error` - `{ code, message, retryable }`
+**Endpoints:**
+- `GET /api/logistics/open`, `POST /api/logistics/message` — candidate Step 3 app channel
+- `GET /api/deep-prompts/open`, `POST /api/deep-prompts/message` — candidate Step 5 app channel
+- `GET /api/requisitions/:id/qa`, `POST /api/requisitions/:id/qa/message` — employer Phase 2 Q&A
+- `POST /api/sandbox/message` — Step 7 sandbox chat (the one surface with real streaming content
+  and tool-call events; `GET /api/sandbox/` is plain JSON history, not SSE)
+
+The email channel (logistics/deep_prompts) and the public share link (Step 8) stay plain
+non-streaming REST as before — nothing about them changes here.
+
+**Event vocabulary** (not every route emits every type):
+- `delta` — `{ text }`, a chunk of the reply (sandbox) or, for a non-streaming chain, the one
+  complete reply
+- `tool_call_start` / `tool_call_end` — `{ tool }`, sandbox/interview chat only: an LLM-invoked
+  tool (`search_candidate_evidence`) ran mid-turn. Never carries the tool's query or results —
+  just that a lookup happened, consistent with the recruiter-audience guardrails (spec §8) that
+  already keep raw evidence out of anything shown verbatim
+- `done` — the turn's final persisted result (`message`, `complete`, and step-specific extras —
+  `progress` for a candidate step that just completed, `thread` for requisition Q&A)
+- `citations` — sandbox only, may arrive after `done` (a separate follow-up call — see
+  `identifySandboxCitations`)
+- `error` — `{ code?, message }`, in place of `done` when the turn fails after streaming has
+  already started (a pre-stream failure — e.g. validation, an already-complete thread — is a
+  normal JSON error response instead, since headers haven't been sent yet)
 
 ## Development Workflow
 
@@ -226,7 +255,7 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml \
 ```
 - Angular built and served from the `frontend` container's own nginx
   (`frontend/nginx.conf`, baked into the image — see Nginx Reverse Proxy
-  above), which also proxies `/api` and `/ws` to `api`
+  above), which also proxies `/api` to `api`
 - `nginx-proxy` only terminates TLS and forwards everything to `frontend`
   — see `infra/nginx/prod.conf.template`
 - Only ports 80/443 exposed
@@ -307,7 +336,7 @@ This is handled by `backend/docker-entrypoint.sh`
 - [ ] Add error boundary components
 - [ ] Add loading states throughout UI (chat/profile screens have basic pending states; not exhaustive)
 - [ ] Implement proper WebSocket reconnection (currently reconnects only on manual navigation back into a chat step)
-- [ ] Expand test coverage (Jest for backend, Jasmine/Karma for frontend — both wired up and enforced in CI as of `.github/workflows/ci.yml`, no coverage threshold gate, just pass/fail). Backend is now fully covered: `routes/` (all 13, plus `middleware/auth.ts`'s `requireAuth`/`requireAdmin` underlying them), `ai/` (all 12 chains — tests mock `./llm`'s exports and assert prompt construction + response post-processing, not model behavior), `websocket/server.ts` (stubs `ws`'s WebSocketServer with a plain EventEmitter and invokes its listeners directly; note its tests need fake timers globally — `WSServer` has no dispose method, so a real 30s heartbeat `setInterval` per test instance will hang the process on real timers), and `services/` (~16/21, grown alongside features as a matter of course — the remaining few are lower-risk). The only real gap left is frontend — only two specs exist (`frontend/src/app/shared/utils/text.ts`, `frontend/src/app/core/flow/flow.service.ts`), no component tests at all. Don't take that as a mandate to backfill component specs wholesale — the UI (admin screens, personality-engine views) is still actively being redesigned, so tests written against it now are likely to be tests rewritten soon; add them as each component's shape actually settles, same as the services/ pattern above.
+- [ ] Expand test coverage (Jest for backend, Jasmine/Karma for frontend — both wired up and enforced in CI as of `.github/workflows/ci.yml`, no coverage threshold gate, just pass/fail). Backend is now fully covered: `routes/` (all 14, plus `middleware/auth.ts`'s `requireAuth`/`requireAdmin`/`requireEmployer` underlying them — every streaming route's SSE envelope has its own coverage too, parsing `event:`/`data:` frames back into objects, see sandbox.routes.test.ts's `parseSSE` helper), `ai/` (every chain, including the new `requisition-culture-signal.chain.ts` — tests mock `./llm`'s exports and assert prompt construction + response post-processing, not model behavior), and `services/` (most, grown alongside features as a matter of course — the remaining few are lower-risk). No `websocket/server.ts` any more — removed in the POST+SSE migration (see "Streaming Chat" above); nothing replaced its old test file since every route it used to front now has its own route-level tests instead. The only real gap left is frontend — only two specs exist (`frontend/src/app/shared/utils/text.ts`, `frontend/src/app/core/flow/flow.service.ts`), no component tests at all. Don't take that as a mandate to backfill component specs wholesale — the UI (admin screens, personality-engine views) is still actively being redesigned, so tests written against it now are likely to be tests rewritten soon; add them as each component's shape actually settles, same as the services/ pattern above.
 - [x] ~~Add OIDC provider integration~~ — Google and GitHub are both done, same shared route pattern (`registerOidcRoutes` in `backend/src/routes/auth.routes.ts`) and shared user upsert (`upsertOidcUser` in `services/auth.service.ts`). Google goes through `google-auth-library`'s `OAuth2Client` (ID-token signature verification); GitHub is plain OAuth2 (no ID token to verify) hand-rolled with a couple of `fetch` calls to `github.com`/`api.github.com`. Redirect URIs are derived from `FRONTEND_URL`, not separate config — see `.env.template`. LinkedIn still not implemented — dev-login bypass remains the only working path for that
 - [x] ~~Real email delivery for the Step 3 email channel~~ — done via Resend; see the "Email gateway (real, via Resend)" note above
 - [x] ~~Scheduled nudges for stalled email threads~~ — `logistics-nudge-scheduler.service.ts`/`.cron.ts` proactively check the Step 3 (logistics) email thread against `InboxService`'s existing `threadNeedsNudge` predicate (shared with the in-app manual-nudge indicator, so the two paths can't disagree) and call the same `sendNudge` the on-demand path already used. Its own cron cadence (`LOGISTICS_NUDGE_CRON`, default hourly) but the same `SCHEDULER_ENABLED` master switch as Iteration 9's weekly scheduler below — a different mechanism from that one (this covers Step 3's `conversation_threads`/hours-of-silence; Iteration 9 covers Step 5's `topic_thread`/weeks), don't conflate the two

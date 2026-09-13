@@ -47,6 +47,18 @@ function buildApp() {
   return app;
 }
 
+// Parses `event: <type>\ndata: <json>\n\n` frames back into {type, ...data} objects — see
+// utils/sse.ts and sandbox.routes.test.ts's identical helper.
+function parseSSE(text: string) {
+  return text
+    .split('\n\n')
+    .filter(Boolean)
+    .map((frame) => {
+      const [eventLine, dataLine] = frame.split('\n');
+      return { type: eventLine.replace('event: ', ''), ...JSON.parse(dataLine.replace('data: ', '')) };
+    });
+}
+
 describe('requisitions.routes', () => {
   let app: express.Express;
 
@@ -189,7 +201,7 @@ describe('requisitions.routes', () => {
       expect(mockRequisitionConversation.postUserMessage).not.toHaveBeenCalled();
     });
 
-    it('posts the message and returns the turn outcome', async () => {
+    it('streams a delta frame with the full reply, then done, over SSE', async () => {
       mockRequisitionService.get.mockResolvedValue({ id: 'r1' } as any);
       mockRequisitionConversation.postUserMessage.mockResolvedValue({
         assistantMessage: { content: 'reply' } as any,
@@ -200,8 +212,13 @@ describe('requisitions.routes', () => {
       const res = await request(app).post('/r1/qa/message').set('x-test-user', 'u1').send({ content: 'Team of 5.' });
 
       expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/event-stream/);
       expect(mockRequisitionConversation.postUserMessage).toHaveBeenCalledWith('r1', 'Team of 5.');
-      expect(res.body).toEqual({ assistantMessage: { content: 'reply' }, complete: false, thread: { id: 'thread-1' } });
+      const frames = parseSSE(res.text);
+      expect(frames).toEqual([
+        { type: 'delta', text: 'reply' },
+        { type: 'done', message: { content: 'reply' }, complete: false, thread: { id: 'thread-1' } }
+      ]);
     });
 
     it('propagates a THREAD_COMPLETE AppError', async () => {

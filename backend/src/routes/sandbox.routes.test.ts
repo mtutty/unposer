@@ -45,16 +45,22 @@ function buildApp() {
   return app;
 }
 
-// Turns a plain array of string chunks into the async generator streamSandboxChat produces.
+// Turns a plain array of string chunks into the delta-event async generator streamSandboxChat
+// now produces (see sandbox-chat.chain.ts's SandboxChatEvent).
 async function* chunksOf(parts: string[]) {
-  for (const p of parts) yield p;
+  for (const p of parts) yield { type: 'delta' as const, text: p };
 }
 
-function parseNdjson(text: string) {
+// Parses `event: <type>\ndata: <json>\n\n` frames back into {type, ...data} objects — the shape
+// every streaming-chat test in the app now asserts against (see utils/sse.ts).
+function parseSSE(text: string) {
   return text
-    .split('\n')
+    .split('\n\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line));
+    .map((frame) => {
+      const [eventLine, dataLine] = frame.split('\n');
+      return { type: eventLine.replace('event: ', ''), ...JSON.parse(dataLine.replace('data: ', '')) };
+    });
 }
 
 describe('sandbox.routes', () => {
@@ -92,11 +98,11 @@ describe('sandbox.routes', () => {
       const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'Tell me about yourself' });
 
       expect(res.status).toBe(200);
-      expect(res.headers['content-type']).toMatch(/x-ndjson/);
+      expect(res.headers['content-type']).toMatch(/event-stream/);
       expect(res.headers['x-accel-buffering']).toBe('no');
 
-      const lines = parseNdjson(res.text);
-      expect(lines).toEqual([
+      const frames = parseSSE(res.text);
+      expect(frames).toEqual([
         { type: 'delta', text: 'Hel' },
         { type: 'delta', text: 'lo' },
         { type: 'done', message: { id: 'msg-1', content: 'Hello' } },
@@ -106,7 +112,25 @@ describe('sandbox.routes', () => {
       expect(mockFlowService.completeStep).toHaveBeenCalledWith('u1', 'sandbox');
     });
 
-    it('still ends the stream with "done" (no citations line) when identifySandboxCitations fails — non-critical', async () => {
+    it('emits tool_call_start/end frames ahead of the delta frames when a tool call happened', async () => {
+      mockSandboxService.beginMessage.mockResolvedValue({ profile: { id: 'p1' } as any, history: [] });
+      mockStreamSandboxChat.mockImplementation(async function* () {
+        yield { type: 'tool_call_start', tool: 'search_candidate_evidence' };
+        yield { type: 'tool_call_end', tool: 'search_candidate_evidence' };
+        yield { type: 'delta', text: 'ok' };
+      });
+      mockSandboxService.saveAssistantMessage.mockResolvedValue({ id: 'msg-1', content: 'ok' } as any);
+      mockIdentifySandboxCitations.mockResolvedValue([]);
+
+      const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'hi' });
+
+      const frames = parseSSE(res.text);
+      expect(frames[0]).toEqual({ type: 'tool_call_start', tool: 'search_candidate_evidence' });
+      expect(frames[1]).toEqual({ type: 'tool_call_end', tool: 'search_candidate_evidence' });
+      expect(frames[2]).toEqual({ type: 'delta', text: 'ok' });
+    });
+
+    it('still ends the stream with "done" (no citations frame) when identifySandboxCitations fails — non-critical', async () => {
       mockSandboxService.beginMessage.mockResolvedValue({ profile: { id: 'p1' } as any, history: [] });
       mockStreamSandboxChat.mockReturnValue(chunksOf(['ok']));
       mockSandboxService.saveAssistantMessage.mockResolvedValue({ id: 'msg-1', content: 'ok' } as any);
@@ -115,23 +139,23 @@ describe('sandbox.routes', () => {
       const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'hi' });
 
       expect(res.status).toBe(200);
-      const lines = parseNdjson(res.text);
-      expect(lines.map((l) => l.type)).toEqual(['delta', 'done']);
+      const frames = parseSSE(res.text);
+      expect(frames.map((f) => f.type)).toEqual(['delta', 'done']);
     });
 
-    it('reports an inline {"type":"error"} line instead of a JSON error response once streaming has begun', async () => {
+    it('reports an inline "error" frame instead of a JSON error response once streaming has begun', async () => {
       mockSandboxService.beginMessage.mockResolvedValue({ profile: { id: 'p1' } as any, history: [] });
       mockStreamSandboxChat.mockImplementation(async function* () {
-        yield 'partial';
+        yield { type: 'delta', text: 'partial' };
         throw new Error('model dropped mid-stream');
       });
 
       const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'hi' });
 
       expect(res.status).toBe(200); // headers were already flushed before the failure
-      const lines = parseNdjson(res.text);
-      expect(lines[0]).toEqual({ type: 'delta', text: 'partial' });
-      expect(lines[1]).toEqual({ type: 'error', message: 'model dropped mid-stream' });
+      const frames = parseSSE(res.text);
+      expect(frames[0]).toEqual({ type: 'delta', text: 'partial' });
+      expect(frames[1]).toEqual({ type: 'error', message: 'model dropped mid-stream' });
     });
 
     it('falls back to a normal JSON error response when beginMessage fails before any bytes are written', async () => {

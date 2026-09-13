@@ -36,6 +36,18 @@ function buildApp() {
   return app;
 }
 
+// Parses `event: <type>\ndata: <json>\n\n` frames back into {type, ...data} objects — see
+// utils/sse.ts and sandbox.routes.test.ts's identical helper.
+function parseSSE(text: string) {
+  return text
+    .split('\n\n')
+    .filter(Boolean)
+    .map((frame) => {
+      const [eventLine, dataLine] = frame.split('\n');
+      return { type: eventLine.replace('event: ', ''), ...JSON.parse(dataLine.replace('data: ', '')) };
+    });
+}
+
 describe('deep-prompts.routes POST /switch-to-email', () => {
   let app: express.Express;
 
@@ -126,5 +138,87 @@ describe('deep-prompts.routes GET /thread', () => {
     expect(res.status).toBe(200);
     expect(mockTopicConversation.getActiveThreadView).toHaveBeenCalledWith('u1');
     expect(res.body).toEqual(view);
+  });
+});
+
+describe('deep-prompts.routes GET /open', () => {
+  let app: express.Express;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    app = buildApp();
+  });
+
+  it('opens/resumes the active topic and returns its exchanges', async () => {
+    mockTopicConversation.ensureOpeningExchanges.mockResolvedValue([{ content: 'Tell me about a time...' } as any]);
+
+    const res = await request(app).get('/open').set('x-test-user', 'u1');
+
+    expect(res.status).toBe(200);
+    expect(mockTopicConversation.ensureOpeningExchanges).toHaveBeenCalledWith('u1', 'app');
+    expect(res.body).toEqual({ messages: [{ content: 'Tell me about a time...' }] });
+  });
+});
+
+describe('deep-prompts.routes POST /message', () => {
+  let app: express.Express;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    app = buildApp();
+  });
+
+  it('rejects empty content before calling the service', async () => {
+    const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: '' });
+
+    expect(res.status).toBe(400);
+    expect(mockTopicConversation.postUserMessage).not.toHaveBeenCalled();
+  });
+
+  it('streams one delta frame with the full reply, then done, without completing the step when the turn is not finished', async () => {
+    mockTopicConversation.postUserMessage.mockResolvedValue({
+      assistantMessage: { id: 'm1', content: 'And what happened next?' } as any,
+      complete: false
+    });
+
+    const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'I noticed the deploy was failing.' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/event-stream/);
+    expect(mockTopicConversation.postUserMessage).toHaveBeenCalledWith('u1', 'app', 'I noticed the deploy was failing.');
+    const frames = parseSSE(res.text);
+    expect(frames).toEqual([
+      { type: 'delta', text: 'And what happened next?' },
+      { type: 'done', message: { id: 'm1', content: 'And what happened next?' }, complete: false }
+    ]);
+    expect(mockFlowService.completeStep).not.toHaveBeenCalled();
+  });
+
+  it('completes the step and includes the resulting progress in "done" when the turn finishes', async () => {
+    mockTopicConversation.postUserMessage.mockResolvedValue({
+      assistantMessage: { id: 'm2', content: 'Thanks — that closes this one out.' } as any,
+      complete: true
+    });
+    mockFlowService.completeStep.mockResolvedValue({ currentStep: 'profile_review' } as any);
+
+    const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'done' });
+
+    expect(mockFlowService.completeStep).toHaveBeenCalledWith('u1', 'deep_prompts');
+    const frames = parseSSE(res.text);
+    expect(frames[1]).toEqual({
+      type: 'done',
+      message: { id: 'm2', content: 'Thanks — that closes this one out.' },
+      complete: true,
+      progress: { currentStep: 'profile_review' }
+    });
+  });
+
+  it('falls back to a normal JSON error response when the service fails before any bytes are written', async () => {
+    mockTopicConversation.postUserMessage.mockRejectedValue(new AppError('NO_ACTIVE_TOPIC', 'No open topic to reply to — resume the session first.', 400));
+
+    const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'hi' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('NO_ACTIVE_TOPIC');
   });
 });
