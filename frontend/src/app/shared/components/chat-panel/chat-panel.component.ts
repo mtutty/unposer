@@ -2,7 +2,7 @@ import { Component, ElementRef, EventEmitter, Input, OnDestroy, OnInit, Output, 
 
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
-import { WebSocketService } from '../../../core/websocket/websocket.service';
+import { ChatStreamService } from '../../../core/chat/chat-stream.service';
 import { FlowService } from '../../../core/flow/flow.service';
 import { Message } from '../../../models/conversation.model';
 import { InfoArea } from '../../../models/flow.model';
@@ -309,47 +309,46 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
   expandedIds = signal<Set<string>>(new Set());
 
   private subs: Subscription[] = [];
+  private sendSub?: Subscription;
 
-  constructor(private ws: WebSocketService, private flow: FlowService) {}
+  constructor(private chatStream: ChatStreamService, private flow: FlowService) {}
+
+  /** REST path segment for this step — 'deep_prompts' the data model id, 'deep-prompts' the URL,
+   *  mirroring the route file naming (deep-prompts.routes.ts) as everywhere else in the app. */
+  private get basePath(): string {
+    return this.step === 'logistics' ? '/logistics' : '/deep-prompts';
+  }
 
   ngOnInit(): void {
-    this.ws.connect(this.step);
-
     this.subs.push(
-      this.ws.connected().subscribe((connected) => {
-        if (connected) this.connecting.set(false);
-      }),
-
-      this.ws.on('chat:message').subscribe((payload: Message) => {
-        this.thinking.set(false);
-
-        const entries = payload.role === 'assistant' ? this.resolveExtractionEntries(payload.metadata) : [];
-        this.items.update((list) => {
-          const next = entries.length ? [...list, { kind: 'extraction' as const, id: `extract-${payload.id}`, entries }] : list;
-          return [...next, { kind: 'message' as const, id: payload.id, role: payload.role as 'user' | 'assistant', content: payload.content }];
-        });
-
-        this.scrollToBottom();
-        if (payload.role === 'assistant') this.assistantReplied.emit();
-      }),
-
-      this.ws.on('progress:update').subscribe((progress) => this.flow.setProgress(progress)),
-
-      this.ws.on('step:complete').subscribe(() => {
-        this.completed.set(true);
-        this.completeChange.emit(true);
-      }),
-
-      this.ws.on('error').subscribe((err) => {
-        this.thinking.set(false);
-        this.errorMessage.set(err.message);
+      this.chatStream.open<{ messages: Message[] }>(`${this.basePath}/open`).subscribe({
+        next: ({ messages }) => {
+          this.connecting.set(false);
+          this.items.set(this.toThreadItems(messages));
+          this.scrollToBottom();
+        },
+        error: (err) => {
+          this.connecting.set(false);
+          this.errorMessage.set(err?.error?.error?.message || 'Could not load this conversation.');
+        }
       })
     );
   }
 
   ngOnDestroy(): void {
     this.subs.forEach((s) => s.unsubscribe());
-    this.ws.disconnect();
+    this.sendSub?.unsubscribe();
+  }
+
+  /** Renders a batch of history messages (from GET /open) into the same ThreadItem shape a live
+   *  turn produces one at a time — including each assistant message's extraction-log line. */
+  private toThreadItems(messages: Message[]): ThreadItem[] {
+    return messages.reduce<ThreadItem[]>((items, message) => {
+      const entries = message.role === 'assistant' ? this.resolveExtractionEntries(message.metadata) : [];
+      if (entries.length) items.push({ kind: 'extraction', id: `extract-${message.id}`, entries });
+      items.push({ kind: 'message', id: message.id, role: message.role as 'user' | 'assistant', content: message.content });
+      return items;
+    }, []);
   }
 
   /** True for any message other than the single most recent one in the thread — everything else
@@ -407,8 +406,39 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
     this.draft = '';
     this.errorMessage.set('');
     this.thinking.set(true);
-    this.ws.send('chat:message', { content });
     this.scrollToBottom();
+
+    this.sendSub = this.chatStream.sendMessage(`${this.basePath}/message`, { content }).subscribe({
+      next: (event) => {
+        if (event.type === 'done') {
+          const payload = event as unknown as { message: Message; complete: boolean; progress?: any };
+          this.thinking.set(false);
+
+          const entries = this.resolveExtractionEntries(payload.message.metadata);
+          this.items.update((list) => {
+            const next = entries.length
+              ? [...list, { kind: 'extraction' as const, id: `extract-${payload.message.id}`, entries }]
+              : list;
+            return [...next, { kind: 'message' as const, id: payload.message.id, role: 'assistant' as const, content: payload.message.content }];
+          });
+          this.scrollToBottom();
+          this.assistantReplied.emit();
+
+          if (payload.progress) this.flow.setProgress(payload.progress);
+          if (payload.complete) {
+            this.completed.set(true);
+            this.completeChange.emit(true);
+          }
+        } else if (event.type === 'error') {
+          this.thinking.set(false);
+          this.errorMessage.set(event.message);
+        }
+      },
+      error: () => {
+        this.thinking.set(false);
+        this.errorMessage.set('Something went wrong — try again.');
+      }
+    });
   }
 
   private scrollToBottom(): void {

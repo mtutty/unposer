@@ -111,6 +111,9 @@ import { ProfileService } from '../../../core/profile/profile.service';
 
         @if (thinking()) {
           <div class="chat-bubble from-assistant thinking">
+            @if (searchingEvidence()) {
+              <span class="searching-label">Searching your profile evidence…</span>
+            }
             <span></span><span></span><span></span>
           </div>
         }
@@ -226,6 +229,16 @@ import { ProfileService } from '../../../core/profile/profile.service';
         40% {
           opacity: 1;
         }
+      }
+
+      // Transient label shown while search_candidate_evidence runs mid-turn (between
+      // tool_call_start and tool_call_end) — new information this transport exposes that the old
+      // NDJSON stream never carried, not just a reformatting of the thinking dots.
+      .searching-label {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--pencil);
+        margin-right: 0.5em;
       }
 
       .error-line {
@@ -397,6 +410,9 @@ export class SandboxStepComponent implements OnInit, OnDestroy {
   // Accumulates as chunks arrive; rendered as a live-growing assistant bubble. Cleared and folded
   // into `messages` once the 'done' event lands with the persisted (flaggable) message.
   streamingReply = signal('');
+  // True between a 'tool_call_start' and the earlier of its 'tool_call_end' or the first 'delta'
+  // — see the .searching-label note above.
+  searchingEvidence = signal(false);
   errorMessage = signal('');
   flaggingId = signal<string | null>(null);
   gapNote = '';
@@ -452,19 +468,26 @@ export class SandboxStepComponent implements OnInit, OnDestroy {
     this.errorMessage.set('');
     this.thinking.set(true);
     this.streamingReply.set('');
+    this.searchingEvidence.set(false);
     this.sending.set(true);
     this.scrollToBottom();
 
     this.streamSub = this.sandboxService.streamMessage(content).subscribe({
       next: (event) => {
-        if (event.type === 'delta') {
+        if (event.type === 'tool_call_start') {
+          this.searchingEvidence.set(true);
+        } else if (event.type === 'tool_call_end') {
+          this.searchingEvidence.set(false);
+        } else if (event.type === 'delta') {
           this.thinking.set(false);
+          this.searchingEvidence.set(false);
           this.streamingReply.update((text) => text + event.text);
           this.scrollToBottom();
         } else if (event.type === 'done') {
           this.messages.update((list) => [...list, event.message]);
           this.streamingReply.set('');
           this.thinking.set(false);
+          this.searchingEvidence.set(false);
           this.sending.set(false);
           this.flow.loadProgress().subscribe();
           this.scrollToBottom();
@@ -478,6 +501,7 @@ export class SandboxStepComponent implements OnInit, OnDestroy {
           this.errorMessage.set(event.message);
           this.thinking.set(false);
           this.streamingReply.set('');
+          this.searchingEvidence.set(false);
           this.sending.set(false);
         }
       },
@@ -485,6 +509,7 @@ export class SandboxStepComponent implements OnInit, OnDestroy {
         this.errorMessage.set('Something went wrong — try again.');
         this.thinking.set(false);
         this.streamingReply.set('');
+        this.searchingEvidence.set(false);
         this.sending.set(false);
       }
     });

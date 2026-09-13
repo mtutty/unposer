@@ -1,7 +1,8 @@
 import { Component, EventEmitter, Input, OnDestroy, OnInit, Output, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
-import { WebSocketService } from '../../core/websocket/websocket.service';
+import { ChatStreamService } from '../../core/chat/chat-stream.service';
+import { RequisitionMessage } from '../../models/requisition.model';
 
 interface DisplayMessage {
   id: string;
@@ -157,37 +158,31 @@ export class RequisitionChatPanelComponent implements OnInit, OnDestroy {
   draft = '';
 
   private subs: Subscription[] = [];
+  private sendSub?: Subscription;
 
-  constructor(private ws: WebSocketService) {}
+  constructor(private chatStream: ChatStreamService) {}
 
   ngOnInit(): void {
-    this.ws.connect({ requisitionId: this.requisitionId });
-
     this.subs.push(
-      this.ws.connected().subscribe((connected) => {
-        if (connected) this.connecting.set(false);
-      }),
-
-      this.ws.on('chat:message').subscribe((payload: DisplayMessage) => {
-        this.thinking.set(false);
-        this.messages.update((list) => [...list, { id: payload.id, role: payload.role, content: payload.content }]);
-      }),
-
-      this.ws.on('requisition:complete').subscribe(() => {
-        this.completed.set(true);
-        this.completeChange.emit(true);
-      }),
-
-      this.ws.on('error').subscribe((err) => {
-        this.thinking.set(false);
-        this.errorMessage.set(err.message);
-      })
+      this.chatStream
+        .open<{ messages: RequisitionMessage[]; thread: { status: string } }>(`/requisitions/${this.requisitionId}/qa`)
+        .subscribe({
+          next: ({ messages, thread }) => {
+            this.connecting.set(false);
+            this.messages.set(messages.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+            if (thread.status === 'complete') this.completed.set(true);
+          },
+          error: (err) => {
+            this.connecting.set(false);
+            this.errorMessage.set(err?.error?.error?.message || 'Could not load this conversation.');
+          }
+        })
     );
   }
 
   ngOnDestroy(): void {
     this.subs.forEach((s) => s.unsubscribe());
-    this.ws.disconnect();
+    this.sendSub?.unsubscribe();
   }
 
   onEnter(event: Event): void {
@@ -206,6 +201,26 @@ export class RequisitionChatPanelComponent implements OnInit, OnDestroy {
     this.draft = '';
     this.errorMessage.set('');
     this.thinking.set(true);
-    this.ws.send('chat:message', { content });
+
+    this.sendSub = this.chatStream.sendMessage(`/requisitions/${this.requisitionId}/qa/message`, { content }).subscribe({
+      next: (event) => {
+        if (event.type === 'done') {
+          const payload = event as unknown as { message: RequisitionMessage; complete: boolean; thread: { status: string } };
+          this.thinking.set(false);
+          this.messages.update((list) => [...list, { id: payload.message.id, role: payload.message.role, content: payload.message.content }]);
+          if (payload.complete) {
+            this.completed.set(true);
+            this.completeChange.emit(true);
+          }
+        } else if (event.type === 'error') {
+          this.thinking.set(false);
+          this.errorMessage.set(event.message);
+        }
+      },
+      error: () => {
+        this.thinking.set(false);
+        this.errorMessage.set('Something went wrong — try again.');
+      }
+    });
   }
 }

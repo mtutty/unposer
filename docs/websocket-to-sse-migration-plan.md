@@ -1,5 +1,19 @@
 # WebSocket → POST+SSE Migration — Frontend Iteration
 
+**Status (2026-09-13): code complete, manual E2E still open.** Tasks 1-8 below are done and
+committed — `ChatStreamService` (`core/chat/chat-stream.service.ts`) replaced `WebSocketService`
+(deleted, along with `core/websocket/`), `SandboxService`/`ChatPanelComponent`/
+`RequisitionChatPanelComponent` all speak real SSE now, `sandbox.component.ts` shows a "Searching
+your profile evidence…" indicator around `tool_call_start`/`tool_call_end`, and the stale
+WebSocket-reconnection TODO in CLAUDE.md was replaced with the real equivalent gap (no retry on a
+stream dropped mid-turn). `cd backend && npm test` (453 passing) and
+`cd frontend && npm run test:ci` (17 passing) both stay green, and `ng build` succeeds.
+**Not done:** the manual browser walkthrough in "Testing" below — `docker-compose up -d` came up
+clean and `/api/auth/dev-login` + `/api/flow/progress` work, but `LLM_API_KEY` in this checkout's
+`.env` is rejected by Anthropic (401 `authentication_error`), so no chat turn that calls the LLM
+(logistics/deep_prompts/requisition Q&A/sandbox) can be driven end-to-end here. Swap in a working
+key and run through "Testing" below before treating this migration as finished.
+
 *Resumption point for the second (frontend) half of the transport migration described in
 CLAUDE.md's "Streaming Chat (SSE)" section. The backend half is done and committed
 (`28b7cb5`, "Migrate every chat surface from WebSocket to POST+SSE (backend)"); this doc is the
