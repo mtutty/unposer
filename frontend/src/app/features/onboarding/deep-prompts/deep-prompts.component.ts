@@ -65,7 +65,9 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
         <span class="stamp" [class.stamp-brass]="channel() === 'app'" [class.stamp-muted]="channel() === 'email'">
           {{ channel() === 'app' ? 'Live chat' : 'By email' }}
         </span>
-        <button type="button" class="btn btn-ghost" (click)="openPicker()">Switch channel</button>
+        <button type="button" class="btn btn-secondary" (click)="openPicker()">
+          {{ channel() === 'app' ? 'Continue via Email →' : 'Continue via Chat →' }}
+        </button>
       </div>
 
       @if (channel() === 'app') {
@@ -110,6 +112,15 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [
     `
+      // See logistics-step.component.ts's identical :host rule for why this is needed — same
+      // .page-col flex-column height chain, same chat-section/chat-frame structure below.
+      :host {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+
       .lede {
         color: var(--ink-soft);
         max-width: 42em;

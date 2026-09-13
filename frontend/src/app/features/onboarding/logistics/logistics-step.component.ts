@@ -89,7 +89,9 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
           <span class="stamp" [class.stamp-brass]="channel() === 'app'" [class.stamp-muted]="channel() === 'email'">
             {{ channel() === 'app' ? 'Live chat' : 'By email' }}
           </span>
-          <button type="button" class="btn btn-ghost" (click)="openPicker()">Switch channel</button>
+          <button type="button" class="btn btn-secondary" (click)="openPicker()">
+            {{ channel() === 'app' ? 'Continue via Email →' : 'Continue via Chat →' }}
+          </button>
         </div>
 
         @if (channel() === 'app') {
@@ -149,6 +151,19 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
     changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
+      // Without this, the host renders at its natural content height inside .page-col's flex
+      // column (see onboarding-shell.component.ts) instead of filling the space page-col actually
+      // has available — .chat-section's own flex:1/min-height:0 below has no real flex container
+      // to size against otherwise, so the chat thread never gets a bounded box to scroll inside
+      // and the whole page scrolls instead (on top of, not instead of, the thread's own scrollbar
+      // once one appears from the composer/textarea pushing content taller than the viewport).
+      :host {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+
       .lede {
         color: var(--ink-soft);
         max-width: 42em;

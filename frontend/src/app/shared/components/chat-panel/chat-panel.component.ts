@@ -92,7 +92,7 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
           <textarea
             [(ngModel)]="draft"
             name="draft"
-            rows="1"
+            rows="2"
             placeholder="Write your answer…"
             (keydown.enter)="onEnter($event)"
           ></textarea>
@@ -277,6 +277,9 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
         padding: 0.7em 0.9em;
         border: 1px solid var(--border);
         border-radius: var(--radius-md);
+        // rows="2" on the element sets the native two-line height; this just guarantees it stays
+        // that tall even if line-height math rounds down somewhere.
+        min-height: 3.6em;
         max-height: 8em;
 
         &:focus {

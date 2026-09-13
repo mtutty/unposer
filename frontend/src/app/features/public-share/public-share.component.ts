@@ -42,7 +42,7 @@ interface DisplayMessage {
           </div>
 
           <form class="composer" (ngSubmit)="send()">
-            <textarea [(ngModel)]="draft" name="draft" rows="1" placeholder="Ask a question…"></textarea>
+            <textarea [(ngModel)]="draft" name="draft" rows="2" placeholder="Ask a question…"></textarea>
             <button type="submit" class="btn btn-primary" [disabled]="!draft.trim() || sending()">Send</button>
           </form>
         </div>
@@ -55,7 +55,12 @@ interface DisplayMessage {
     styles: [
         `
       .screen {
-        min-height: 100%;
+        // A definite viewport-relative height (not just a minimum) so .chat-frame's flex:1 below
+        // has a real bound to fill and .thread can scroll within it instead of the whole page
+        // growing — same reasoning as onboarding-shell.component.ts's .page-col, but self-
+        // contained here since this route has no shared shell to inherit a height chain from.
+        height: 100dvh;
+        overflow-y: auto;
         background: var(--cover);
         padding: 3rem 1.5rem;
         display: flex;
@@ -90,7 +95,9 @@ interface DisplayMessage {
         padding: 1.5rem;
         display: flex;
         flex-direction: column;
+        flex: 1;
         min-height: 420px;
+        overflow: hidden;
       }
 
       .thread {
@@ -98,6 +105,7 @@ interface DisplayMessage {
         display: flex;
         flex-direction: column;
         gap: 0.75rem;
+        min-height: 0;
         overflow-y: auto;
         margin-bottom: 1rem;
       }
@@ -120,6 +128,8 @@ interface DisplayMessage {
           padding: 0.7em 0.9em;
           border: 1px solid var(--border);
           border-radius: var(--radius-md);
+          min-height: 3.6em;
+          max-height: 8em;
         }
       }
     `

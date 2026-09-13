@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnDestroy, OnInit, Output, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, OnDestroy, OnInit, Output, signal, ViewChild, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { ChatStreamService } from '../../core/chat/chat-stream.service';
@@ -25,7 +25,7 @@ interface DisplayMessage {
   imports: [FormsModule],
   template: `
     <div class="chat">
-      <div class="thread">
+      <div class="thread" #threadEl>
         @if (connecting()) {
           <p class="meta status-line">Connecting…</p>
         }
@@ -52,7 +52,7 @@ interface DisplayMessage {
         </div>
       } @else {
         <form class="composer" (ngSubmit)="send()">
-          <textarea [(ngModel)]="draft" name="draft" rows="1" placeholder="Write your answer…" (keydown.enter)="onEnter($event)"></textarea>
+          <textarea [(ngModel)]="draft" name="draft" rows="2" placeholder="Write your answer…" (keydown.enter)="onEnter($event)"></textarea>
           <button type="submit" class="btn btn-primary" [disabled]="!draft.trim() || thinking()">Send</button>
         </form>
       }
@@ -61,17 +61,25 @@ interface DisplayMessage {
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [
     `
+      // A fixed, bounded height (rather than a viewport-relative one, since this panel is embedded
+      // partway down a normal-scrolling form page, not a dedicated full-screen chat route) so
+      // .thread scrolls internally instead of growing the whole page — same intent as the
+      // candidate-facing chat surfaces (chat-panel.component.ts, sandbox/public-share), applied at
+      // this component's own scale rather than page-col's viewport-height chain.
       .chat {
         display: flex;
         flex-direction: column;
+        height: 28rem;
         gap: 0.75rem;
       }
 
       .thread {
+        flex: 1;
         display: flex;
         flex-direction: column;
         gap: 0.85rem;
-        min-height: 12rem;
+        min-height: 0;
+        overflow-y: auto;
       }
 
       .status-line {
@@ -141,6 +149,7 @@ interface DisplayMessage {
         padding: 0.7em 0.9em;
         border: 1px solid var(--border);
         border-radius: 4px;
+        min-height: 3.6em;
         max-height: 8em;
       }
     `
@@ -157,6 +166,8 @@ export class RequisitionChatPanelComponent implements OnInit, OnDestroy {
   errorMessage = signal('');
   draft = '';
 
+  @ViewChild('threadEl') threadEl?: ElementRef<HTMLDivElement>;
+
   private subs: Subscription[] = [];
   private sendSub?: Subscription;
 
@@ -171,6 +182,7 @@ export class RequisitionChatPanelComponent implements OnInit, OnDestroy {
             this.connecting.set(false);
             this.messages.set(messages.map((m) => ({ id: m.id, role: m.role, content: m.content })));
             if (thread.status === 'complete') this.completed.set(true);
+            this.scrollToBottom();
           },
           error: (err) => {
             this.connecting.set(false);
@@ -201,6 +213,7 @@ export class RequisitionChatPanelComponent implements OnInit, OnDestroy {
     this.draft = '';
     this.errorMessage.set('');
     this.thinking.set(true);
+    this.scrollToBottom();
 
     this.sendSub = this.chatStream.sendMessage(`/requisitions/${this.requisitionId}/qa/message`, { content }).subscribe({
       next: (event) => {
@@ -212,6 +225,7 @@ export class RequisitionChatPanelComponent implements OnInit, OnDestroy {
             this.completed.set(true);
             this.completeChange.emit(true);
           }
+          this.scrollToBottom();
         } else if (event.type === 'error') {
           this.thinking.set(false);
           this.errorMessage.set(event.message);
@@ -221,6 +235,13 @@ export class RequisitionChatPanelComponent implements OnInit, OnDestroy {
         this.thinking.set(false);
         this.errorMessage.set('Something went wrong — try again.');
       }
+    });
+  }
+
+  private scrollToBottom(): void {
+    queueMicrotask(() => {
+      const el = this.threadEl?.nativeElement;
+      if (el) el.scrollTop = el.scrollHeight;
     });
   }
 }

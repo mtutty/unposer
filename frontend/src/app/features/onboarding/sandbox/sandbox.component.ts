@@ -134,7 +134,7 @@ import { ProfileService } from '../../../core/profile/profile.service';
       }
 
       <form class="composer" (ngSubmit)="send()">
-        <textarea [(ngModel)]="draft" name="draft" rows="1" placeholder="Ask a question…" (keydown.enter)="onEnter($event)"></textarea>
+        <textarea [(ngModel)]="draft" name="draft" rows="2" placeholder="Ask a question…" (keydown.enter)="onEnter($event)"></textarea>
         <button type="submit" class="btn btn-primary" [disabled]="!draft.trim() || sending()">Send</button>
       </form>
     </div>
@@ -151,6 +151,17 @@ import { ProfileService } from '../../../core/profile/profile.service';
     changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
+      // Same fix, same reason as logistics-step.component.ts's :host rule — without it, .chat-frame
+      // below has no real flex container above it to size against, so it (and .thread inside it)
+      // just grow to fit content instead of getting a bounded box to scroll within, and the whole
+      // page scrolls instead of just the thread.
+      :host {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+
       .lede {
         color: var(--ink-soft);
         max-width: 42em;
@@ -175,7 +186,9 @@ import { ProfileService } from '../../../core/profile/profile.service';
         padding: 1.5rem;
         display: flex;
         flex-direction: column;
+        flex: 1;
         min-height: 420px;
+        overflow: hidden;
       }
 
       .thread {
@@ -183,6 +196,7 @@ import { ProfileService } from '../../../core/profile/profile.service';
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
+        min-height: 0;
         overflow-y: auto;
         margin-bottom: 1rem;
       }
@@ -383,6 +397,8 @@ import { ProfileService } from '../../../core/profile/profile.service';
           padding: 0.7em 0.9em;
           border: 1px solid var(--border);
           border-radius: var(--radius-md);
+          min-height: 3.6em;
+          max-height: 8em;
         }
       }
 
