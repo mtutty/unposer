@@ -51,7 +51,7 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
         </ul>
       </div>
 
-      <form class="card panel" (ngSubmit)="onSubmit()">
+      <form id="login-panel" class="card panel" (ngSubmit)="onSubmit()">
         <span class="eyebrow">Sign in</span>
 
         @if (error()) {
@@ -142,6 +142,11 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
         @media (max-width: 860px) {
           justify-self: stretch;
           max-width: none;
+          // The marketing copy is long enough to push the actual sign-in panel below the fold on
+          // a phone — once the grid stacks to one column, show the panel first (see .panel's
+          // matching order: -1 below) so the thing you came here to do is visible immediately,
+          // pitch copy scrollable underneath rather than above.
+          order: 1;
         }
 
         h1 {
@@ -190,6 +195,7 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
         @media (max-width: 860px) {
           justify-self: stretch;
           max-width: none;
+          order: -1;
         }
       }
 
