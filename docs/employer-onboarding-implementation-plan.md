@@ -108,9 +108,10 @@ convergence (2026-09-12, spec §4) — shared `CvfQuadrant` enum, separate table
   own updated "WebSocket vs. REST" subsection) — WebSocket was removed from the whole app, not
   just this step, once it became clear nothing in the app actually used a socket's real
   differentiator. `POST /:id/qa/message` now streams over SSE like every other chat surface.
-- Frontend (not yet migrated to SSE — separate iteration): `RequisitionChatPanelComponent` (new,
-  `features/employer/`) — a smaller, separate component rather than a generalization of the
-  candidate's `ChatPanelComponent` (no `FlowProgress`/glyph-tracker concept applies here).
+- Frontend: `RequisitionChatPanelComponent` (`features/employer/`) — a smaller, separate component
+  rather than a generalization of the candidate's `ChatPanelComponent` (no `FlowProgress`/glyph-
+  tracker concept applies here), now on the same `ChatStreamService`-backed POST+SSE transport
+  (2026-09) every chat surface in the app uses — see CLAUDE.md's "Streaming Chat (SSE)" section.
   `EmployerRequisitionDetailComponent` embeds it while `status === 'draft'`, and falls back to a
   read-only transcript (`RequisitionService.getQa`,
   REST) once the thread completes.
