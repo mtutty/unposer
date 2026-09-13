@@ -17,7 +17,7 @@ router.get('/users', async (req: AuthRequest, res, next) => {
     const { q, role, status, limit, offset } = req.query;
     const result = await adminService.listUsers({
       q: typeof q === 'string' ? q : undefined,
-      role: role === 'user' || role === 'admin' || role === 'invited' ? role : undefined,
+      role: role === 'user' || role === 'admin' || role === 'invited' || role === 'employer' ? role : undefined,
       status: status === 'active' || status === 'suspended' || status === 'pending' ? status : undefined,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined
@@ -30,7 +30,11 @@ router.get('/users', async (req: AuthRequest, res, next) => {
 
 const inviteSchema = z.object({
   email: z.string().email(),
-  message: z.string().max(2000).optional()
+  message: z.string().max(2000).optional(),
+  // 'employer' (docs/employer-onboarding-spec.md §2.1) is invite-only, same mechanism as an
+  // ordinary invite — just targeting a different role once claimed. Never 'admin'/'invited'
+  // themselves; there's no self-service or promotion path onto this endpoint for those.
+  role: z.enum(['user', 'employer']).optional()
 });
 
 // Creates a role='invited' placeholder row and emails the person a link to sign in — see
@@ -39,7 +43,9 @@ const inviteSchema = z.object({
 // /users/:id so "invite" is never captured as an :id.
 router.post('/users/invite', validate(inviteSchema), async (req: AuthRequest, res, next) => {
   try {
-    const user = await adminService.inviteUser(req.body.email, req.userId!, req.body.message);
+    // validate() doesn't write parsed defaults back onto req.body (see its own code) — defaulted
+    // here instead of via zod's .default() so an omitted role doesn't get silently dropped.
+    const user = await adminService.inviteUser(req.body.email, req.userId!, req.body.message, req.body.role || 'user');
     res.status(201).json({ user });
   } catch (error) {
     next(error);
@@ -86,7 +92,7 @@ router.post('/users/:id/reset', validate(resetSchema), async (req: AuthRequest, 
 
 const updateUserSchema = z
   .object({
-    role: z.enum(['user', 'admin']).optional(),
+    role: z.enum(['user', 'admin', 'employer']).optional(),
     status: z.enum(['active', 'suspended', 'pending']).optional()
   })
   .refine((data) => data.role !== undefined || data.status !== undefined, {

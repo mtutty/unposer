@@ -11,10 +11,12 @@ import { ShareStepComponent } from './features/onboarding/share/share.component'
 import { PublicShareComponent } from './features/public-share/public-share.component';
 import { AdminUsersComponent } from './features/admin/admin-users.component';
 import { AdminUserDetailComponent } from './features/admin/admin-user-detail.component';
+import { EmployerRequisitionsComponent } from './features/employer/employer-requisitions.component';
+import { EmployerRequisitionDetailComponent } from './features/employer/employer-requisition-detail.component';
 import { ScheduleSettingsComponent } from './features/schedule/schedule-settings.component';
 import { HowItWorksComponent } from './features/how-it-works/how-it-works.component';
 import { PendingApprovalComponent } from './features/pending/pending-approval.component';
-import { authGuard, guestGuard, adminGuard, pendingGuard } from './core/auth/auth.guard';
+import { authGuard, guestGuard, adminGuard, employerGuard, pendingGuard } from './core/auth/auth.guard';
 
 export const routes: Routes = [
   // The login page doubles as the marketing splash now (see login.component.ts) — `/` just
@@ -26,6 +28,8 @@ export const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'admin/users', component: AdminUsersComponent, canActivate: [adminGuard] },
   { path: 'admin/users/:id', component: AdminUserDetailComponent, canActivate: [adminGuard] },
+  { path: 'employer/requisitions', component: EmployerRequisitionsComponent, canActivate: [employerGuard] },
+  { path: 'employer/requisitions/:id', component: EmployerRequisitionDetailComponent, canActivate: [employerGuard] },
   { path: 'settings/schedule', component: ScheduleSettingsComponent, canActivate: [authGuard] },
   {
     path: 'onboarding',

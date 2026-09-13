@@ -42,6 +42,13 @@ interface UserRow {
             <label for="invite-message">Message (optional)</label>
             <input id="invite-message" type="text" [(ngModel)]="inviteMessage" name="inviteMessage" placeholder="Included in the invite email" />
           </div>
+          <div class="field">
+            <label for="invite-role">Role</label>
+            <select id="invite-role" [(ngModel)]="inviteRole" name="inviteRole">
+              <option value="user">user</option>
+              <option value="employer">employer</option>
+            </select>
+          </div>
           <button type="submit" class="btn btn-primary" [disabled]="inviting() || !inviteEmail">
             {{ inviting() ? 'Sending…' : 'Send invite' }}
           </button>
@@ -63,6 +70,7 @@ interface UserRow {
             <option value="user">user</option>
             <option value="admin">admin</option>
             <option value="invited">invited</option>
+            <option value="employer">employer</option>
           </select>
         </div>
         <div class="field">
@@ -115,6 +123,7 @@ interface UserRow {
                   <select [(ngModel)]="row.role">
                     <option value="user">user</option>
                     <option value="admin">admin</option>
+                    <option value="employer">employer</option>
                   </select>
                 </td>
                 <td>
@@ -224,6 +233,7 @@ export class AdminUsersComponent implements OnInit {
 
   inviteEmail = '';
   inviteMessage = '';
+  inviteRole: 'user' | 'employer' = 'user';
   inviting = signal(false);
   inviteError = signal<string | null>(null);
 
@@ -253,10 +263,11 @@ export class AdminUsersComponent implements OnInit {
     if (!this.inviteEmail) return;
     this.inviting.set(true);
     this.inviteError.set(null);
-    this.admin.inviteUser(this.inviteEmail, this.inviteMessage || undefined).subscribe({
+    this.admin.inviteUser(this.inviteEmail, this.inviteMessage || undefined, this.inviteRole).subscribe({
       next: () => {
         this.inviteEmail = '';
         this.inviteMessage = '';
+        this.inviteRole = 'user';
         this.inviting.set(false);
         this.reload();
       },

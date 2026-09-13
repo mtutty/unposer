@@ -187,8 +187,14 @@ export class AdminService {
    * Re-inviting an email that's already pending (role 'invited') just re-sends the email rather
    * than erroring — a reasonable "resend invite" affordance without a separate endpoint. Any
    * other existing account for that email is a hard conflict.
+   *
+   * `targetRole` (default 'user') is what the invite becomes once claimed — see `invited_role`
+   * on the users table and upsertOidcUser in auth.service.ts. Employer accounts
+   * (docs/employer-onboarding-spec.md §2.1) are invited the same way, just with
+   * targetRole: 'employer'; re-inviting an existing pending row updates invited_role too, so
+   * correcting a typo'd role before the person signs in doesn't need a revoke-and-reinvite.
    */
-  async inviteUser(email: string, invitedByUserId: string, customMessage?: string): Promise<User> {
+  async inviteUser(email: string, invitedByUserId: string, customMessage?: string, targetRole: UserRole = 'user'): Promise<User> {
     const existing = await db('users').whereRaw('lower(email) = lower(?)', [email]).first();
     if (existing && existing.role !== 'invited') {
       throw new AppError('EMAIL_IN_USE', 'An account with this email already exists', 409);
@@ -198,7 +204,7 @@ export class AdminService {
     if (existing) {
       [user] = await db('users')
         .where({ id: existing.id })
-        .update({ invited_by: invitedByUserId, invited_at: new Date(), updated_at: new Date() })
+        .update({ invited_by: invitedByUserId, invited_at: new Date(), invited_role: targetRole, updated_at: new Date() })
         .returning('*');
     } else {
       [user] = await db('users')
@@ -207,7 +213,8 @@ export class AdminService {
           name: email,
           role: 'invited',
           invited_by: invitedByUserId,
-          invited_at: new Date()
+          invited_at: new Date(),
+          invited_role: targetRole
         })
         .returning('*');
     }

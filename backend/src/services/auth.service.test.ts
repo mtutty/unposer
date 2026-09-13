@@ -104,11 +104,11 @@ describe('AuthService (upsertOidcUser via githubLogin)', () => {
     expect(user.status).toBe('pending');
   });
 
-  it('claims a pending invite (role invited) by email, flipping it to role user regardless of invite-only mode', async () => {
+  it('claims a pending invite (role invited) by email, flipping it to invited_role regardless of invite-only mode', async () => {
     mockConfig.inviteOnly.enabled = true; // must still work — invite-only only gates self-registration
     usersBuilder.first
       .mockResolvedValueOnce(undefined) // (provider, subject) lookup
-      .mockResolvedValueOnce({ id: 'u3', email: 'octo@example.com', role: 'invited', invited_by: 'admin-1' }); // email lookup
+      .mockResolvedValueOnce({ id: 'u3', email: 'octo@example.com', role: 'invited', invited_role: 'user', invited_by: 'admin-1' }); // email lookup
     usersBuilder.returning.mockResolvedValueOnce([{ id: 'u3', role: 'user', email: 'octo@example.com' }]);
 
     const { user } = await service.githubLogin('code');
@@ -118,6 +118,20 @@ describe('AuthService (upsertOidcUser via githubLogin)', () => {
     );
     expect(usersBuilder.insert).not.toHaveBeenCalled();
     expect(user.role).toBe('user');
+  });
+
+  it('claims a pending employer invite, flipping it to role employer (docs/employer-onboarding-spec.md §2.1)', async () => {
+    usersBuilder.first
+      .mockResolvedValueOnce(undefined) // (provider, subject) lookup
+      .mockResolvedValueOnce({ id: 'u5', email: 'octo@example.com', role: 'invited', invited_role: 'employer', invited_by: 'admin-1' }); // email lookup
+    usersBuilder.returning.mockResolvedValueOnce([{ id: 'u5', role: 'employer', email: 'octo@example.com' }]);
+
+    const { user } = await service.githubLogin('code');
+
+    expect(usersBuilder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'employer', oidc_provider: 'github', oidc_subject: '42' })
+    );
+    expect(user.role).toBe('employer');
   });
 
   it('rejects with EMAIL_IN_USE when the email already belongs to a different, non-invited account', async () => {

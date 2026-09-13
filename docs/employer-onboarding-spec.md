@@ -10,7 +10,9 @@ resumption point for building a real, authenticated employer side on top of that
 **Status:** Design spec for build, phased. Written per Michael's direction: go broad (seeker +
 recruiter) before deep (career planning, job stats — see
 `docs/labor-market-data-source-catalog.md`, deprioritized), and skip the calibration console for
-now (`docs/calibration-console-spec.md`, already spec'd-not-built) in favor of this.
+now (`docs/calibration-console-spec.md`, already spec'd-not-built) in favor of this. **Phase 1 is
+built** — see `docs/employer-onboarding-implementation-plan.md` for status/deviations; the
+role-assignment question in §2.1 was resolved as invite-only.
 
 ---
 
@@ -421,10 +423,8 @@ Not tracked in `docs/personality-engine-implementation-plan.md` — that plan is
 personality-engine layer on the *candidate* side and this is a parallel, independent workstream
 with no dependency on it (Phase 4/5's `runSandboxChat` reuse touches the same guardrail code the
 personality engine's Iteration 8 hardened, but doesn't depend on any *later* personality-engine
-iteration). Recommend a new, separate tracker doc (`employer-onboarding-implementation-plan.md`,
-mirroring this repo's existing spec-plus-plan-doc pattern) once Phase 1 implementation actually
-starts, rather than folding phase status into this spec document as it's built — same separation
-`docs/calibration-console-spec.md` (spec) vs.
+iteration). Tracked instead in `docs/employer-onboarding-implementation-plan.md` (started once
+Phase 1 implementation began), same separation `docs/calibration-console-spec.md` (spec) vs.
 `docs/personality-engine-implementation-plan.md` (tracker) already establishes.
 
 ---

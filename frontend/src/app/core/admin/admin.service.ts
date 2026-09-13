@@ -69,9 +69,11 @@ export class AdminService {
   }
 
   /** Creates a role='invited' placeholder and emails the person a sign-in link — see
-   *  AdminService.inviteUser. Works regardless of invitation-only mode. */
-  inviteUser(email: string, message?: string): Observable<{ user: User }> {
-    return this.api.post<{ user: User }>('/admin/users/invite', { email, message: message || undefined });
+   *  AdminService.inviteUser. Works regardless of invitation-only mode. `role` (default 'user')
+   *  is what the invite becomes once claimed — 'employer' invites a recruiter account
+   *  (docs/employer-onboarding-spec.md §2.1). */
+  inviteUser(email: string, message?: string, role?: 'user' | 'employer'): Observable<{ user: User }> {
+    return this.api.post<{ user: User }>('/admin/users/invite', { email, message: message || undefined, role });
   }
 
   /** Deletes a pending invite (server 400s if the target isn't role 'invited'). */

@@ -105,14 +105,30 @@ describe('admin.routes', () => {
       expect(mockAdminService.inviteUser).not.toHaveBeenCalled();
     });
 
-    it('creates the invite, passing the caller id and optional message through', async () => {
+    it('creates the invite, passing the caller id, optional message, and default role through', async () => {
       mockAdminService.inviteUser.mockResolvedValue({ id: 'u3', email: 'new@example.com', role: 'invited' } as any);
 
       const res = await asAdmin(request(app).post('/users/invite')).send({ email: 'new@example.com', message: 'Welcome!' });
 
       expect(res.status).toBe(201);
-      expect(mockAdminService.inviteUser).toHaveBeenCalledWith('new@example.com', 'admin-1', 'Welcome!');
+      expect(mockAdminService.inviteUser).toHaveBeenCalledWith('new@example.com', 'admin-1', 'Welcome!', 'user');
       expect(res.body.user.role).toBe('invited');
+    });
+
+    it('passes role: employer through when requested (docs/employer-onboarding-spec.md §2.1)', async () => {
+      mockAdminService.inviteUser.mockResolvedValue({ id: 'u7', email: 'recruiter@example.com', role: 'invited' } as any);
+
+      const res = await asAdmin(request(app).post('/users/invite')).send({ email: 'recruiter@example.com', role: 'employer' });
+
+      expect(res.status).toBe(201);
+      expect(mockAdminService.inviteUser).toHaveBeenCalledWith('recruiter@example.com', 'admin-1', undefined, 'employer');
+    });
+
+    it('rejects an unsupported role before calling the service', async () => {
+      const res = await asAdmin(request(app).post('/users/invite')).send({ email: 'new@example.com', role: 'admin' });
+
+      expect(res.status).toBe(400);
+      expect(mockAdminService.inviteUser).not.toHaveBeenCalled();
     });
 
     it('propagates a service AppError (e.g. email already in use)', async () => {

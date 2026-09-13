@@ -2,7 +2,7 @@ jest.mock('../db/connection', () => ({ db: jest.fn() }));
 
 import { Response, NextFunction } from 'express';
 import { db } from '../db/connection';
-import { requireAuth, requireAdmin, AuthRequest } from './auth';
+import { requireAuth, requireAdmin, requireEmployer, AuthRequest } from './auth';
 import { AppError } from '../types';
 
 const dbMock = db as unknown as jest.Mock;
@@ -144,6 +144,39 @@ describe('requireAdmin', () => {
     const next = mockNext();
 
     requireAdmin(req, {} as Response, next);
+
+    expect(next).toHaveBeenCalledWith();
+  });
+});
+
+describe('requireEmployer', () => {
+  it('calls next(FORBIDDEN) for a non-employer user', () => {
+    const req = { user: { role: 'user' } } as unknown as AuthRequest;
+    const next = mockNext();
+
+    requireEmployer(req, {} as Response, next);
+
+    const err = (next as jest.Mock).mock.calls[0][0];
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.code).toBe('FORBIDDEN');
+    expect(err.status).toBe(403);
+  });
+
+  it('calls next(FORBIDDEN) when req.user is missing entirely', () => {
+    const req = {} as unknown as AuthRequest;
+    const next = mockNext();
+
+    requireEmployer(req, {} as Response, next);
+
+    const err = (next as jest.Mock).mock.calls[0][0];
+    expect(err.code).toBe('FORBIDDEN');
+  });
+
+  it('calls next() with no error for an employer user', () => {
+    const req = { user: { role: 'employer' } } as unknown as AuthRequest;
+    const next = mockNext();
+
+    requireEmployer(req, {} as Response, next);
 
     expect(next).toHaveBeenCalledWith();
   });

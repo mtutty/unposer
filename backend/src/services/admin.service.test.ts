@@ -208,8 +208,20 @@ describe('AdminService', () => {
       await service.inviteUser('new@b.com', 'admin-1');
 
       expect(builder.insert).not.toHaveBeenCalled();
-      expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ invited_by: 'admin-1' }));
+      expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ invited_by: 'admin-1', invited_role: 'user' }));
       expect(sendSpy).toHaveBeenCalledWith('new@b.com', undefined);
+    });
+
+    it('invites with invited_role: employer when targetRole is passed (docs/employer-onboarding-spec.md §2.1)', async () => {
+      builder.first.mockResolvedValueOnce(undefined);
+      builder.returning.mockResolvedValueOnce([{ id: 'u6', email: 'recruiter@b.com', role: 'invited', invited_role: 'employer' }]);
+      jest.spyOn(EmailService.prototype, 'sendInvite').mockResolvedValueOnce();
+
+      await service.inviteUser('recruiter@b.com', 'admin-1', undefined, 'employer');
+
+      expect(builder.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'recruiter@b.com', role: 'invited', invited_role: 'employer' })
+      );
     });
   });
 

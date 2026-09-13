@@ -3,9 +3,11 @@
 // ---------------------------------------------------------------------------
 
 // 'invited' is a placeholder row created by an admin (AdminService.inviteUser) before the person
-// has ever signed in — see the migration that added it. It flips to 'user' automatically on
-// their first real OIDC login (AuthService's upsert flow) and is never set any other way.
-export type UserRole = 'user' | 'admin' | 'invited';
+// has ever signed in — see the migration that added it. It flips to `invited_role` (below)
+// automatically on their first real OIDC login (AuthService's upsert flow) and is never set any
+// other way. 'employer' (docs/employer-onboarding-spec.md §2.1, Phase 1) is invite-only, same
+// mechanism — an admin invites a specific email with invited_role: 'employer'.
+export type UserRole = 'user' | 'admin' | 'invited' | 'employer';
 // 'pending' = a self-registered account created while invite-only mode was on (see
 // upsertOidcUser in auth.service.ts) — awaiting an admin flipping it to 'active'. requireAuth
 // blocks it from every candidate-flow route the same way it blocks 'suspended'; the frontend
@@ -25,6 +27,10 @@ export interface User {
   last_login_at: Date | null;
   invited_by: string | null;
   invited_at: Date | null;
+  // The role a pending 'invited' row should become once claimed (AuthService's upsertOidcUser) —
+  // set by AdminService.inviteUser at invite time. Meaningless once role !== 'invited' (it's left
+  // as-is, same as invited_by/invited_at, for the admin list's own history). Defaults 'user'.
+  invited_role: UserRole;
   created_at: Date;
   updated_at: Date;
 }
@@ -517,6 +523,26 @@ export interface VarianceFlag {
   adjudicated_by: string | null;
   adjudicated_at: Date | null;
   created_at: Date;
+}
+
+// ---------------------------------------------------------------------------
+// Employer-side onboarding (docs/employer-onboarding-spec.md) — Phase 1 only. No company/org
+// entity (spec §2.1): a requisition belongs to one employer user_id, not an organization.
+// ---------------------------------------------------------------------------
+
+// 'draft' until Phase 2's org/situational/cultural Q&A completes (not built yet, so nothing
+// flips this today); 'closed' is likewise unused until an employer-facing action sets it.
+export type JobRequisitionStatus = 'draft' | 'active' | 'closed';
+
+export interface JobRequisition {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string;
+  requirements: string | null;
+  status: JobRequisitionStatus;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export class AppError extends Error {

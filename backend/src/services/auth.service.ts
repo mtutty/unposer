@@ -82,9 +82,11 @@ async function upsertOidcUser(params: {
 
   if (existingByEmail && existingByEmail.role === 'invited') {
     // First real login for an invited user: claim the placeholder row rather than inserting a
-    // new one — fills in the oidc identity and flips role 'invited' -> 'user'. invited_by/
-    // invited_at are left as-is (see the migration's comment) so the admin list keeps showing
-    // who invited them.
+    // new one — fills in the oidc identity and flips role 'invited' -> invited_role, whatever
+    // role the invite targeted (AdminService.inviteUser; 'user' for an ordinary invite,
+    // 'employer' for docs/employer-onboarding-spec.md §2.1's invite-only employer accounts).
+    // invited_by/invited_at are left as-is (see the migration's comment) so the admin list keeps
+    // showing who invited them.
     [user] = await db('users')
       .where({ id: existingByEmail.id })
       .update({
@@ -92,7 +94,7 @@ async function upsertOidcUser(params: {
         avatar_url: params.avatarUrl,
         oidc_provider: params.provider,
         oidc_subject: params.subject,
-        role: 'user',
+        role: existingByEmail.invited_role,
         updated_at: new Date()
       })
       .returning('*');

@@ -68,3 +68,15 @@ export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction
   }
   next();
 }
+
+/** Chain after requireAuth on any employer-only route (docs/employer-onboarding-spec.md §2.1) —
+ *  relies on req.user already being populated. Employer accounts are invite-only (an admin sets
+ *  invited_role: 'employer'; see AdminService.inviteUser and upsertOidcUser), so there's no
+ *  self-registration path onto these routes to guard against beyond this role check. */
+export function requireEmployer(req: AuthRequest, res: Response, next: NextFunction): void {
+  if (req.user?.role !== 'employer') {
+    next(new AppError('FORBIDDEN', 'Employer access required', 403));
+    return;
+  }
+  next();
+}
