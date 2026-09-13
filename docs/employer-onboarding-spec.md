@@ -10,10 +10,10 @@ resumption point for building a real, authenticated employer side on top of that
 **Status:** Design spec for build, phased. Written per Michael's direction: go broad (seeker +
 recruiter) before deep (career planning, job stats — see
 `docs/labor-market-data-source-catalog.md`, deprioritized), and skip the calibration console for
-now (`docs/calibration-console-spec.md`, already spec'd-not-built) in favor of this. **Phases 1-2
-are built, Phase 3 in progress** — see `docs/employer-onboarding-implementation-plan.md` for
-status/deviations; the role-assignment question in §2.1 was resolved as invite-only, §5's
-discoverability question as an opt-in flag.
+now (`docs/calibration-console-spec.md`, already spec'd-not-built) in favor of this. **Phases 1-3
+are built** — see `docs/employer-onboarding-implementation-plan.md` for status/deviations; the
+role-assignment question in §2.1 was resolved as invite-only, §5's discoverability question as an
+opt-in flag.
 
 ---
 

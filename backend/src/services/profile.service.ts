@@ -8,6 +8,7 @@ import { ProgressionService } from './progression.service';
 import { InsightService } from './insight.service';
 import { CultureSignalService } from './culture-signal.service';
 import { EvidenceService } from './evidence.service';
+import { parseRemotePreference } from '../utils/search-normalize';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -116,10 +117,17 @@ export class ProfileService {
         // contributing_evidence_ids). Array.isArray guards existing rows still holding that
         // pre-fix `{}` value.
         correction_log: JSON.stringify(Array.isArray(existing?.correction_log) ? existing.correction_log : []),
-        approved_at: status === 'approved' ? new Date() : null
+        approved_at: status === 'approved' ? new Date() : null,
+        // Employer onboarding Phase 3 (spec §5) — recomputed on every (re)generation from the
+        // candidate's own free-text logistics answers; `discoverable` itself is deliberately not
+        // in this insert/merge list, so a candidate's own opt-in choice survives a profile
+        // refresh instead of resetting to the column default.
+        search_role: logistics?.data?.targetRolesIndustries || null,
+        search_location: logistics?.data?.locationPreference || null,
+        search_remote: parseRemotePreference(logistics?.data?.locationPreference)
       })
       .onConflict('user_id')
-      .merge(['status', 'version', 'profile_data', 'approved_at'])
+      .merge(['status', 'version', 'profile_data', 'approved_at', 'search_role', 'search_location', 'search_remote'])
       .returning('*');
 
     // Re-indexes the distilled evidence tier for semantic retrieval in sandbox/share chat (see

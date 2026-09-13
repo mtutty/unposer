@@ -59,6 +59,10 @@ function profileFixture(overrides: Partial<CandidateProfile> = {}): CandidatePro
     },
     correction_log: [],
     approved_at: null,
+    discoverable: false,
+    search_role: null,
+    search_location: null,
+    search_remote: null,
     created_at: new Date(),
     updated_at: new Date(),
     ...overrides

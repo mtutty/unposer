@@ -8,7 +8,7 @@ import { AuthService } from '../../../core/auth/auth.service';
     imports: [RouterLink],
     template: `
     <header class="topbar">
-      <a [routerLink]="auth.currentUser()?.role === 'admin' ? '/admin/users' : '/dashboard'" class="brand font-display">
+      <a [routerLink]="homeRoute()" class="brand font-display">
         <img class="brand-mark" src="/light/favicon-48x48.png" alt="" aria-hidden="true" />
         Unposer
       </a>
@@ -28,6 +28,9 @@ import { AuthService } from '../../../core/auth/auth.service';
           <button class="btn btn-ghost" (click)="logout()">Log out</button>
           @if (user.role === 'admin') {
             <a routerLink="/admin/users" class="btn btn-ghost">Admin</a>
+          } @else if (user.role === 'employer') {
+            <a routerLink="/employer/requisitions" class="btn btn-ghost">Requisitions</a>
+            <a routerLink="/employer/search" class="btn btn-ghost">Search candidates</a>
           } @else {
             <a routerLink="/settings/schedule" class="btn btn-ghost">Check-in settings</a>
           }
@@ -121,6 +124,16 @@ import { AuthService } from '../../../core/auth/auth.service';
 })
 export class TopbarComponent {
   constructor(public auth: AuthService, private router: Router) {}
+
+  /** Where the brand mark links back to — mirrors authGuard/guestGuard/pendingGuard's own
+   *  per-role landing routes (core/auth/auth.guard.ts) rather than always assuming /dashboard,
+   *  which is candidate-only. */
+  homeRoute(): string {
+    const role = this.auth.currentUser()?.role;
+    if (role === 'admin') return '/admin/users';
+    if (role === 'employer') return '/employer/requisitions';
+    return '/dashboard';
+  }
 
   logout(): void {
     this.auth.logout().subscribe(() => this.router.navigate(['/login']));

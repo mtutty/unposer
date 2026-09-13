@@ -17,6 +17,26 @@ router.get('/', requireAuth, async (req: AuthRequest, res, next) => {
   }
 });
 
+// Employer onboarding Phase 3 (docs/employer-onboarding-spec.md §5) — the candidate's own current
+// discoverability setting, read on the Share step alongside the link list above.
+router.get('/discoverable', requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    res.json({ discoverable: await shareService.getDiscoverable(req.userId!) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const discoverableSchema = z.object({ discoverable: z.boolean() });
+
+router.patch('/discoverable', requireAuth, validate(discoverableSchema), async (req: AuthRequest, res, next) => {
+  try {
+    res.json({ discoverable: await shareService.setDiscoverable(req.userId!, req.body.discoverable) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 const createSchema = z.object({ days: z.number().int().min(1).max(60).optional(), label: z.string().optional() });
 
 router.post('/', requireAuth, validate(createSchema), async (req: AuthRequest, res, next) => {

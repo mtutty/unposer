@@ -21,7 +21,7 @@ it tracks against, and pick up exactly where the last phase left off. Mirrors th
 |---|---|---|---|
 | 1 | Post a job requisition | ✅ Done | Employer role + `job_requisitions` CRUD, no AI |
 | 2 | Org/situational/cultural Q&A | ✅ Done | Live-chat elicitation + shared-vocabulary culture signal |
-| 3 | Basic candidate search | 🟨 In progress | Decided (2026-09-13): opt-in `discoverable` flag (spec §5) |
+| 3 | Basic candidate search | ✅ Done | Opt-in `discoverable` flag + role/location/remote filters |
 | 4 | Short 1:1 virtual interview | ⬜ Not started | Blocked: consent-to-interview decision (spec §6) |
 | 5 | Batch interview + scoring/comparison | ⬜ Not started | Blocked: fixed vs. adaptive question set (spec §7) |
 
@@ -130,4 +130,44 @@ starting:** discoverability (2026-09-13, spec §5) — opt-in `candidate_profile
 flag, default `false`. A candidate is searchable if and only if they've explicitly turned it on;
 no other action (a share link, a progression tier, step completion) implies it.
 
-In progress — see the commit(s) landing this section for what was actually built.
+**What was built:**
+- `candidate_profiles` gains four columns (migration `20260913000004`): `discoverable` (boolean,
+  default false), `search_role`/`search_location` (plain text copies of
+  `LogisticsData.targetRolesIndustries`/`.locationPreference`), `search_remote` (`'remote' |
+  'hybrid' | 'onsite' | null`). The three `search_*` fields are recomputed on every profile
+  (re)generation (`ProfileService.synthesizeProfile`) via `utils/search-normalize.ts`'s
+  `parseRemotePreference` — a plain keyword regex over the candidate's own free-text location
+  answer, not an LLM call (spec's own "basic search" scoping doesn't need more than that).
+  `discoverable` is deliberately excluded from that recompute's `onConflict().merge()` list so a
+  candidate's opt-in choice survives a profile refresh instead of resetting to the column default.
+- `ShareService.setDiscoverable`/`getDiscoverable` (`share.service.ts`) — turning discoverability
+  *on* reuses the exact same Core-persona-or-later tier gate as `createLink` (factored into a
+  shared `assertShareEligible`, spec's own reasoning: exposing a profile to search carries the
+  same §8 depth requirement as exposing it via a share-link token); turning it *off* is never
+  gated. `GET/PATCH /api/share/discoverable` (`share.routes.ts`).
+- `CandidateSearchService.search` (`candidate-search.service.ts`) — `discoverable=true AND
+  status='approved'` always required, plus optional `role`/`location` (ILIKE substring) and
+  `remote` (exact match) filters, limit/offset pagination (same shape as `AdminService.listUsers`).
+  Result rows are a narrow public-safe projection (headline, role, location, remote) — nothing
+  from `profile_data` beyond the headline, same recruiter-facing guardrail posture as the
+  personality spec's §8. `GET /api/employer/search` (`employer-search.routes.ts`, new
+  `/api/employer` base path per the spec's own API sketch), behind `requireEmployer`.
+- Frontend: Share step (`share.component.ts`) gained a toggle switch next to the share-link
+  controls ("Also let employers find you in search"), backed by `ShareService.getDiscoverable`/
+  `setDiscoverable`. New `features/employer/candidate-search.component.ts` (`/employer/search`,
+  `employerGuard`) — filter form + paginated result table, same plain/utilitarian style as
+  `employer-requisitions.component.ts`. `TopbarComponent` gained proper employer nav (a
+  "Requisitions"/"Search candidates" branch, plus a corrected brand-link `homeRoute()`) — it was
+  previously falling through to the candidate-only "Check-in settings" link and `/dashboard`, a
+  pre-existing gap this phase's own new page made worth fixing alongside it.
+
+**Deviations from the spec doc:** none of substance — the API path, filter set, and discoverability
+mechanism all match the spec's sketch. The spec left room for a company/requisition-scoped search
+narrowing later; not built here (nothing in the spec calls for it yet).
+
+**Verified live** against the running dev stack: `PATCH /discoverable` 400s `PROFILE_NOT_APPROVED`
+with no profile and (separately, via direct DB fixture) `TIER_TOO_LOW` below Core persona; a
+seeded discoverable+approved profile is found by an unfiltered search, found by a matching
+role/remote filter, excluded by a non-matching one, and a non-employer role gets a 403.
+
+**Files touched:** see the commit this section landed in.

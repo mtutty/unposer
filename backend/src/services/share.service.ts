@@ -19,18 +19,23 @@ export interface PublicProfileView {
 export class ShareService {
   private progression = new ProgressionService();
 
-  async createLink(userId: string, days: number, label?: string): Promise<ShareLink> {
+  /**
+   * Shared precondition for anything that exposes a profile beyond its owner — a generated share
+   * link (createLink) or opting into employer search (setDiscoverable). Flow addendum §7 for the
+   * share-link case: the share button's precondition, not a new completion state — the existing
+   * "at least one share link generated" completion criterion is unchanged. Gated on
+   * progression.tier, not calibration status — §8's recruiter guardrails assume a profile with
+   * defensible per-dimension confidence bands, which Core persona (all 11 at medium+) is the
+   * point of, independent of whether any dimension has cleared calibration yet (Iteration 7's
+   * still-blocked half — see the plan doc). Returns the approved profile row so callers that need
+   * it (setDiscoverable) don't re-query.
+   */
+  private async assertShareEligible(userId: string): Promise<{ id: string; user_id: string }> {
     const profile = await db('candidate_profiles').where({ user_id: userId, status: 'approved' }).first();
     if (!profile) {
       throw new AppError('PROFILE_NOT_APPROVED', 'Approve your profile before generating a share link.', 400);
     }
 
-    // Flow addendum §7: the share button's precondition, not a new completion state — the
-    // existing "at least one share link generated" completion criterion is unchanged. Gated on
-    // progression.tier, not calibration status — §8's recruiter guardrails assume a profile with
-    // defensible per-dimension confidence bands, which Core persona (all 11 at medium+) is the
-    // point of, independent of whether any dimension has cleared calibration yet (Iteration 7's
-    // still-blocked half — see the plan doc).
     const tier = await this.progression.getTier(userId);
     if (!CORE_PERSONA_OR_LATER.has(tier)) {
       const { dimensionsAtConfidence } = await this.progression.getTemporalDepthSummary(userId);
@@ -42,6 +47,12 @@ export class ShareService {
         { tier, thinDimensions: thin }
       );
     }
+
+    return profile;
+  }
+
+  async createLink(userId: string, days: number, label?: string): Promise<ShareLink> {
+    await this.assertShareEligible(userId);
 
     const boundedDays = Math.min(Math.max(days || config.flow.shareLinkDefaultDays, 1), config.flow.shareLinkMaxDays);
     const expiresAt = new Date(Date.now() + boundedDays * 24 * 60 * 60 * 1000);
@@ -60,6 +71,31 @@ export class ShareService {
 
   async listLinks(userId: string): Promise<ShareLink[]> {
     return db('share_links').where({ user_id: userId }).orderBy('created_at', 'desc');
+  }
+
+  async getDiscoverable(userId: string): Promise<boolean> {
+    const profile = await db('candidate_profiles').where({ user_id: userId }).first();
+    return !!profile?.discoverable;
+  }
+
+  /**
+   * Employer onboarding Phase 3 (docs/employer-onboarding-spec.md §5) — the candidate's own
+   * opt-in toggle, surfaced alongside "generate a share link" on the Share step. Same eligibility
+   * gate as createLink when turning it *on* (a discoverable profile is exposed to search the same
+   * way a share link exposes it to whoever holds the token, so it needs the same depth bar);
+   * turning it *off* is always allowed regardless of tier — withdrawing consent is never gated.
+   */
+  async setDiscoverable(userId: string, discoverable: boolean): Promise<boolean> {
+    if (discoverable) {
+      await this.assertShareEligible(userId);
+    }
+
+    const updated = await db('candidate_profiles').where({ user_id: userId }).update({ discoverable });
+    if (!updated) {
+      throw new AppError('PROFILE_NOT_APPROVED', 'Approve your profile before generating a share link.', 400);
+    }
+
+    return discoverable;
   }
 
   private async loadValidLink(token: string): Promise<ShareLink> {

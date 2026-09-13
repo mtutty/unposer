@@ -15,4 +15,14 @@ export class ShareService {
   create(days?: number, label?: string) {
     return this.api.post<{ link: ShareLink; url: string; progress: any }>('/share', { days, label });
   }
+
+  /** Employer onboarding Phase 3 (docs/employer-onboarding-spec.md §5) — the candidate's own
+   *  opt-in flag, alongside the share-link controls above. */
+  getDiscoverable() {
+    return this.api.get<{ discoverable: boolean }>('/share/discoverable');
+  }
+
+  setDiscoverable(discoverable: boolean) {
+    return this.api.patch<{ discoverable: boolean }>('/share/discoverable', { discoverable });
+  }
 }

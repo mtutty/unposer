@@ -19,6 +19,7 @@ import adminRoutes from './routes/admin.routes';
 import deepPromptsRoutes from './routes/deep-prompts.routes';
 import scheduleRoutes from './routes/schedule.routes';
 import requisitionsRoutes from './routes/requisitions.routes';
+import employerSearchRoutes from './routes/employer-search.routes';
 
 export function createApp() {
   const app = express();
@@ -73,6 +74,7 @@ export function createApp() {
   app.use('/api/deep-prompts', deepPromptsRoutes);
   app.use('/api/schedule', scheduleRoutes);
   app.use('/api/requisitions', requisitionsRoutes);
+  app.use('/api/employer', employerSearchRoutes);
 
   // Error handler (must be last)
   app.use(errorHandler);

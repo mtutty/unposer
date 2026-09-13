@@ -262,6 +262,9 @@ export interface CorrectionLogEntry {
   resolvedAt: Date | null;
 }
 
+// 'remote' | 'hybrid' | 'onsite' | null — see utils/search-normalize.ts.
+export type RemotePreference = 'remote' | 'hybrid' | 'onsite' | null;
+
 export interface CandidateProfile {
   id: string;
   user_id: string;
@@ -270,6 +273,13 @@ export interface CandidateProfile {
   profile_data: ProfileData;
   correction_log: CorrectionLogEntry[];
   approved_at: Date | null;
+  // Employer onboarding Phase 3 (docs/employer-onboarding-spec.md §5) — opt-in only, set by
+  // ShareService.setDiscoverable, never implied by any other action. search_role/search_location/
+  // search_remote are recomputed on every profile (re)generation; discoverable is not.
+  discoverable: boolean;
+  search_role: string | null;
+  search_location: string | null;
+  search_remote: RemotePreference;
   created_at: Date;
   updated_at: Date;
 }

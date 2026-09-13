@@ -97,4 +97,50 @@ describe('share.routes', () => {
       expect(res.body.error.code).toBe('PROFILE_NOT_APPROVED');
     });
   });
+
+  describe('GET /discoverable', () => {
+    it('401s with no authenticated user', async () => {
+      const res = await request(app).get('/discoverable');
+      expect(res.status).toBe(401);
+      expect(mockShareService.getDiscoverable).not.toHaveBeenCalled();
+    });
+
+    it("returns the caller's current discoverability setting", async () => {
+      mockShareService.getDiscoverable.mockResolvedValue(true);
+
+      const res = await request(app).get('/discoverable').set('x-test-user', 'u1');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ discoverable: true });
+      expect(mockShareService.getDiscoverable).toHaveBeenCalledWith('u1');
+    });
+  });
+
+  describe('PATCH /discoverable', () => {
+    it('rejects a non-boolean body before calling the service', async () => {
+      const res = await request(app).patch('/discoverable').set('x-test-user', 'u1').send({ discoverable: 'yes' });
+
+      expect(res.status).toBe(400);
+      expect(mockShareService.setDiscoverable).not.toHaveBeenCalled();
+    });
+
+    it('sets the flag and returns it', async () => {
+      mockShareService.setDiscoverable.mockResolvedValue(true);
+
+      const res = await request(app).patch('/discoverable').set('x-test-user', 'u1').send({ discoverable: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ discoverable: true });
+      expect(mockShareService.setDiscoverable).toHaveBeenCalledWith('u1', true);
+    });
+
+    it('propagates a service AppError (e.g. tier too low) as its own status/code', async () => {
+      mockShareService.setDiscoverable.mockRejectedValue(new AppError('TIER_TOO_LOW', 'Needs more depth first', 400));
+
+      const res = await request(app).patch('/discoverable').set('x-test-user', 'u1').send({ discoverable: true });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('TIER_TOO_LOW');
+    });
+  });
 });

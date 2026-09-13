@@ -53,6 +53,30 @@ import { ShareLink } from '../../../models/sandbox.model';
       </div>
     }
 
+    <div class="card discoverable-panel">
+      <div class="discoverable-row">
+        <div>
+          <p class="discoverable-label">Also let employers find you in search</p>
+          <p class="meta">
+            Opt-in only — turning this on makes your basic details (target role, location, remote
+            preference) visible to employer search. You can turn it off any time.
+          </p>
+        </div>
+        <label class="switch">
+          <input
+            type="checkbox"
+            [checked]="discoverable()"
+            [disabled]="discoverableSaving() || (tierTooLow() && !discoverable())"
+            (change)="toggleDiscoverable($any($event.target).checked)"
+          />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </label>
+      </div>
+      @if (discoverableError()) {
+        <p class="error-line">{{ discoverableError() }}</p>
+      }
+    </div>
+
     @if (links().length) {
       <h3 class="section-title">Active links</h3>
       <ul class="link-list">
@@ -107,6 +131,84 @@ import { ShareLink } from '../../../models/sandbox.model';
           overflow-x: auto;
           white-space: nowrap;
         }
+      }
+
+      .discoverable-panel {
+        margin-top: 1.5rem;
+        padding: 1.25rem 1.5rem;
+      }
+
+      .discoverable-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+      }
+
+      .discoverable-label {
+        margin: 0;
+        font-weight: 600;
+      }
+
+      .discoverable-row .meta {
+        margin: 0.2em 0 0;
+        max-width: 42em;
+      }
+
+      // Plain checkbox styled as a toggle switch — no new primitive added to styles.scss for a
+      // single use; promote it there if a second toggle shows up elsewhere.
+      .switch {
+        flex-shrink: 0;
+        display: inline-flex;
+        cursor: pointer;
+
+        input {
+          position: absolute;
+          opacity: 0;
+          width: 1px;
+          height: 1px;
+        }
+
+        input:disabled + .switch-track {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        input:focus-visible + .switch-track {
+          outline: 2px solid var(--brass-strong);
+          outline-offset: 2px;
+        }
+      }
+
+      .switch-track {
+        width: 2.6em;
+        height: 1.5em;
+        border-radius: 999px;
+        background: var(--page-3);
+        border: 1px solid var(--border);
+        position: relative;
+        transition: background 0.15s ease;
+      }
+
+      .switch-thumb {
+        position: absolute;
+        top: 1px;
+        left: 1px;
+        width: calc(1.5em - 4px);
+        height: calc(1.5em - 4px);
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(33, 29, 24, 0.25);
+        transition: transform 0.15s ease;
+      }
+
+      .switch input:checked + .switch-track {
+        background: var(--sage-strong);
+      }
+
+      .switch input:checked + .switch-track .switch-thumb {
+        transform: translateX(1.1em);
       }
 
       .section-title {
@@ -164,6 +266,12 @@ export class ShareStepComponent implements OnInit {
   justCreatedUrl = signal<string | null>(null);
   copied = signal(false);
 
+  // Employer onboarding Phase 3 (docs/employer-onboarding-spec.md §5) — the candidate's own
+  // opt-in flag, alongside the share-link controls above.
+  discoverable = signal(false);
+  discoverableSaving = signal(false);
+  discoverableError = signal('');
+
   // Flow addendum §7: the share button is disabled (with a reason) until progression.tier
   // reaches Core persona — the real gate is server-side (ShareService.createLink), this just
   // avoids sending a request that would only come back 400.
@@ -176,7 +284,23 @@ export class ShareStepComponent implements OnInit {
 
   ngOnInit(): void {
     this.shareService.list().subscribe((links) => this.links.set(links));
+    this.shareService.getDiscoverable().subscribe(({ discoverable }) => this.discoverable.set(discoverable));
     this.profileService.loadProgression().subscribe();
+  }
+
+  toggleDiscoverable(checked: boolean): void {
+    this.discoverableSaving.set(true);
+    this.discoverableError.set('');
+    this.shareService.setDiscoverable(checked).subscribe({
+      next: ({ discoverable }) => {
+        this.discoverable.set(discoverable);
+        this.discoverableSaving.set(false);
+      },
+      error: (err) => {
+        this.discoverableError.set(err.error?.error?.message || 'Could not update this setting');
+        this.discoverableSaving.set(false);
+      }
+    });
   }
 
   create(): void {
