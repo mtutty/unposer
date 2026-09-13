@@ -107,6 +107,20 @@ const SECTIONS: FaqSection[] = [
     ]
   },
   {
+    title: 'What we don\'t publish, and why',
+    tag: 'Disclosure policy',
+    items: [
+      {
+        q: 'Why isn\'t this page more specific about exact numbers and rules?',
+        a: "This page is public — no login required — on purpose: nothing about how we treat you should depend on whether you've registered. That only works if the line we draw isn't \"hide the mechanism,\" it's \"disclose the mechanism, withhold the answer key.\" So everything about intent and method is here in full: what we look at, what we ignore, why time and specificity matter more than volume, what recruiters never see and why. What's left out is narrowly the stuff whose only function is to be un-gameable *because* it's unpublished — the exact thresholds a rubric uses, and which particular questions are the candid, never-shown-to-recruiters ones. Naming those wouldn't inform you, it would just tell you which topic to answer evasively — and if it did, we'd owe you the fix, not a longer disclaimer."
+      },
+      {
+        q: 'Is that distinction just an excuse to hide things?',
+        a: 'It\'s a testable claim, and you\'re welcome to test it: if any answer on this page reads as evasive rather than as "this specific number would only be useful for gaming it," that\'s a bug in the page, not an intentional gap — tell us and we\'ll either publish the number or explain concretely why not.'
+      }
+    ]
+  },
+  {
     title: 'Can this be gamed?',
     tag: 'Fabrication & fairness',
     items: [
