@@ -267,6 +267,10 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
         gap: 0.6rem;
         padding-top: 0.75rem;
         border-top: 1px solid var(--border);
+        // Never shrinks below its natural (rows="5") size — see .chat-frame's min-height: 0
+        // comment in logistics-step.component.ts/deep-prompts.component.ts: .thread is the one
+        // that gives up space when things are tight, never this.
+        flex-shrink: 0;
       }
 
       textarea {

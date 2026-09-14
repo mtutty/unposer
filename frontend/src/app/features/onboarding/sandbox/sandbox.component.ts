@@ -187,13 +187,14 @@ import { ProfileService } from '../../../core/profile/profile.service';
         display: flex;
         flex-direction: column;
         // flex-basis (not min-height) for the 420px target — see logistics-step.component.ts's
-        // identical comment: min-height is a hard floor that can overflow the page when real
-        // available space is tighter than 420px. No overflow:hidden here (deliberately) — on a
-        // genuinely tight viewport this can still need more room than it's been given (e.g. the
-        // 5-line composer on a page with a lot of header content above the chat); better to let
-        // that spill up into page-col's own overflow-y:auto fallback than to silently clip the
-        // composer/send button.
+        // identical comment: min-height: 0 here lets this shrink below its children's automatic
+        // minimum, which is what actually matters — .composer below has flex-shrink: 0 (always
+        // full size) and .thread has its own min-height: 0 (can compress to nothing), so
+        // chat-frame's content always exactly fits whatever height it's given — no overflow ever
+        // reaches page-col, so the header above never scrolls, and .thread is the only thing that
+        // ever does.
         flex: 1 1 420px;
+        min-height: 0;
       }
 
       .thread {
@@ -393,6 +394,7 @@ import { ProfileService } from '../../../core/profile/profile.service';
         gap: 0.6rem;
         padding-top: 0.75rem;
         border-top: 1px solid var(--border);
+        flex-shrink: 0;
 
         textarea {
           flex: 1;

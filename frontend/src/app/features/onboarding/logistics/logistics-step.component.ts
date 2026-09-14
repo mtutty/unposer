@@ -271,14 +271,16 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
       .chat-frame {
         margin-top: 1.5rem;
         padding: 1.5rem;
-        // flex-basis (not min-height) for the 420px target — see deep-prompts.component.ts's
-        // identical comment: min-height is a hard floor that can overflow page-col when the real
-        // available space is tighter than 420px, which is the "page is 20-40px too tall" bug. No
-        // overflow:hidden and no min-height:0 override here (deliberately) — on a genuinely tight
-        // viewport (this page has a lot of header content above the chat) this can still need more
-        // room than it's been given; better to let that spill up into page-col's own
-        // overflow-y:auto fallback than to silently clip the composer/send button.
+        // flex-basis (not min-height) for the 420px target — see the "page is 20-40px too tall"
+        // fix in onboarding-shell.component.ts. min-height: 0 here (this time deliberately, unlike
+        // that other fix) lets this shrink below its own children's automatic minimum, which is
+        // what actually matters: .composer below has flex-shrink: 0 (always renders at its full,
+        // committed size) and .thread has its own min-height: 0 (can compress all the way to
+        // nothing), so between the two, chat-frame's children always exactly fit whatever height
+        // it's actually given — no overflow ever reaches page-col, so the header/tracker/channel
+        // row above never scrolls, and .thread is the only thing that ever does.
         flex: 1 1 420px;
+        min-height: 0;
         display: flex;
       }
 
