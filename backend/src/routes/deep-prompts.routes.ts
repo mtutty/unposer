@@ -81,7 +81,12 @@ router.post('/message', requireAuth, validate(messageSchema), async (req: AuthRe
     writeSSEEvent(res, 'delta', { text: outcome.assistantMessage.content });
 
     const progress = outcome.complete ? await flowService.completeStep(userId, 'deep_prompts') : undefined;
-    writeSSEEvent(res, 'done', { message: outcome.assistantMessage, complete: outcome.complete, progress });
+    writeSSEEvent(res, 'done', {
+      message: outcome.assistantMessage,
+      complete: outcome.complete,
+      topicClosed: outcome.topicClosed,
+      progress
+    });
     res.end();
   } catch (error: any) {
     if (res.headersSent) {

@@ -178,7 +178,8 @@ describe('deep-prompts.routes POST /message', () => {
   it('streams one delta frame with the full reply, then done, without completing the step when the turn is not finished', async () => {
     mockTopicConversation.postUserMessage.mockResolvedValue({
       assistantMessage: { id: 'm1', content: 'And what happened next?' } as any,
-      complete: false
+      complete: false,
+      topicClosed: false
     });
 
     const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'I noticed the deploy was failing.' });
@@ -189,15 +190,35 @@ describe('deep-prompts.routes POST /message', () => {
     const frames = parseSSE(res.text);
     expect(frames).toEqual([
       { type: 'delta', text: 'And what happened next?' },
-      { type: 'done', message: { id: 'm1', content: 'And what happened next?' }, complete: false }
+      { type: 'done', message: { id: 'm1', content: 'And what happened next?' }, complete: false, topicClosed: false }
     ]);
+    expect(mockFlowService.completeStep).not.toHaveBeenCalled();
+  });
+
+  it('surfaces topicClosed in "done" when a topic closes without completing the step (e.g. a bonus/optional question long after the step first completed)', async () => {
+    mockTopicConversation.postUserMessage.mockResolvedValue({
+      assistantMessage: { id: 'm1b', content: "I've got what I need on this topic." } as any,
+      complete: false,
+      topicClosed: true
+    });
+
+    const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'that covers it' });
+
+    const frames = parseSSE(res.text);
+    expect(frames[1]).toEqual({
+      type: 'done',
+      message: { id: 'm1b', content: "I've got what I need on this topic." },
+      complete: false,
+      topicClosed: true
+    });
     expect(mockFlowService.completeStep).not.toHaveBeenCalled();
   });
 
   it('completes the step and includes the resulting progress in "done" when the turn finishes', async () => {
     mockTopicConversation.postUserMessage.mockResolvedValue({
       assistantMessage: { id: 'm2', content: 'Thanks — that closes this one out.' } as any,
-      complete: true
+      complete: true,
+      topicClosed: true
     });
     mockFlowService.completeStep.mockResolvedValue({ currentStep: 'profile_review' } as any);
 
@@ -209,6 +230,7 @@ describe('deep-prompts.routes POST /message', () => {
       type: 'done',
       message: { id: 'm2', content: 'Thanks — that closes this one out.' },
       complete: true,
+      topicClosed: true,
       progress: { currentStep: 'profile_review' }
     });
   });

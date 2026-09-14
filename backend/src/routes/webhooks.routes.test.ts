@@ -235,7 +235,8 @@ describe('webhooks.routes POST /inbound-email', () => {
     wireDb();
     mockTopicConversation.postUserMessage.mockResolvedValue({
       assistantMessage: { content: 'Great story, tell me more.' } as any,
-      complete: false
+      complete: false,
+      topicClosed: false
     });
 
     const res = await request(app).post('/inbound-email').send({});

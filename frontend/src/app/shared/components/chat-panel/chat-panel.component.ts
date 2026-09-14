@@ -82,9 +82,19 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
         <p class="error-line">{{ errorMessage() }}</p>
       }
 
-      @if (completed()) {
+      @if (completed() || topicPaused()) {
+        <!-- One shared <ng-content> outlet (not one per branch) — content projected via a given
+             selector binds to a single ng-content slot at compile time, so a second occurrence of
+             select="[doneAction]" in a sibling @else-if branch never receives it, even when that
+             branch is the one actually rendered. See the git history here for how that silently
+             dropped the CTA link in the topicPaused() state. -->
         <div class="completed-banner">
-          <span class="stamp stamp-brass">Step complete</span>
+          @if (completed()) {
+            <span class="stamp stamp-brass">Step complete</span>
+          } @else {
+            <span class="stamp stamp-muted">Thanks for sharing</span>
+            <p class="meta">That's plenty on this one — come back anytime for another.</p>
+          }
           <ng-content select="[doneAction]"></ng-content>
         </div>
       } @else {
@@ -257,9 +267,20 @@ type ThreadItem = DisplayMessage | ExtractionLogItem;
       .completed-banner {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 1rem;
         padding-top: 0.75rem;
         border-top: 1px solid var(--border);
+        // Same reasoning as .composer's flex-shrink: 0 below — this replaces the composer in the
+        // same flex slot once completed()/topicPaused() is true, and must render in full (its CTA
+        // link included) rather than being compressed when .chat-frame is tight on room; .thread
+        // is what gives up space, never this.
+        flex-shrink: 0;
+
+        .meta {
+          margin: 0;
+          flex: 1 1 auto;
+        }
       }
 
       .composer {
@@ -310,6 +331,8 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
   connecting = signal(true);
   thinking = signal(false);
   completed = signal(false);
+  /** deep_prompts only — see the topicClosed handling in send() below. */
+  topicPaused = signal(false);
   errorMessage = signal('');
   draft = '';
   // Messages the candidate has manually expanded past their 3-line clamp — see isOld().
@@ -418,7 +441,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
     this.sendSub = this.chatStream.sendMessage(`${this.basePath}/message`, { content }).subscribe({
       next: (event) => {
         if (event.type === 'done') {
-          const payload = event as unknown as { message: Message; complete: boolean; progress?: any };
+          const payload = event as unknown as { message: Message; complete: boolean; topicClosed?: boolean; progress?: any };
           this.thinking.set(false);
 
           const entries = this.resolveExtractionEntries(payload.message.metadata);
@@ -435,6 +458,14 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
           if (payload.complete) {
             this.completed.set(true);
             this.completeChange.emit(true);
+          } else if (payload.topicClosed) {
+            // deep_prompts only (see topic-conversation.service.ts's TopicTurnOutcome) — the topic
+            // just closed without also completing the flow step: either a bonus/optional question
+            // answered long after the step first completed, or (rarer) a required-set topic that
+            // closed without yet reaching Sketch. Either way there's no active thread left to
+            // reply to, so swap to a distinct "come back anytime" state rather than leaving a
+            // composer that would just 400 (NO_ACTIVE_TOPIC) on the next message.
+            this.topicPaused.set(true);
           }
         } else if (event.type === 'error') {
           this.thinking.set(false);

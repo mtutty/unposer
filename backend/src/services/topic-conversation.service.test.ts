@@ -308,7 +308,8 @@ describe('TopicConversationService', () => {
       expect(mockRecomputeDimensions).not.toHaveBeenCalled(); // re-score only triggers on topic close (spec §9.2)
       expect(outcome).toEqual({
         assistantMessage: expect.objectContaining({ id: 'ex-assistant', content: 'Tell me more.' }),
-        complete: true
+        complete: true,
+        topicClosed: false
       });
     });
 
@@ -324,8 +325,9 @@ describe('TopicConversationService', () => {
       const extractedRows = [{ id: 'de-1', dimension: 'openness' }];
       mockExtractAndPersist.mockResolvedValueOnce(extractedRows);
 
-      await service.postUserMessage('user-1', 'app', "that's all I've got");
+      const outcome = await service.postUserMessage('user-1', 'app', "that's all I've got");
 
+      expect(outcome.topicClosed).toBe(true);
       expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'closed', closed_by: 'user' }));
       // Full re-score (spec §9.2) fires for every dimension Q1 loads on, not just its primary.
       expect(mockRecomputeDimensions).toHaveBeenCalledWith('user-1', Object.keys(getQuestion('Q1')!.dimensionLoads));
@@ -381,6 +383,27 @@ describe('TopicConversationService', () => {
       const outcome = await service.postUserMessage('user-1', 'app', 'answering a bonus question');
 
       expect(outcome.complete).toBe(false);
+    });
+
+    it('reports topicClosed:true (with complete:false) when a bonus/optional topic closes after the step already completed — the case the frontend needs to show a "come back anytime" state instead of a dead composer', async () => {
+      builder.first.mockResolvedValueOnce(threadFixture({ question_id: 'Q1' }));
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
+      builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
+      mockRunTopicTurn.mockResolvedValueOnce({
+        reply: "I've got what I need on this topic.",
+        closeTopic: true,
+        closedBy: 'model'
+      });
+      builder.returning.mockResolvedValueOnce([
+        exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: "I've got what I need on this topic." })
+      ]);
+      builder.first
+        .mockResolvedValueOnce({ steps_state: { deep_prompts: 'complete' } })
+        .mockResolvedValueOnce({ tier: 'core_persona' });
+
+      const outcome = await service.postUserMessage('user-1', 'app', 'that wraps it up');
+
+      expect(outcome).toMatchObject({ complete: false, topicClosed: true });
     });
 
     it('handles an ad hoc (non-library) thread by building a synthetic question from its opener + stored dimensions', async () => {

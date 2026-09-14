@@ -13,6 +13,17 @@ import { computeOccasionId } from '../utils/occasion';
 export interface TopicTurnOutcome {
   assistantMessage: Message;
   complete: boolean;
+  /** True when this turn closed the topic thread (turn.closeTopic) — distinct from `complete`,
+   *  which only fires the one time this closing *also* transitions the whole flow step (see
+   *  isFlowStepComplete's own comment). A topic can close without the step completing in two
+   *  cases: mid-way through the required/core set (tier hasn't reached Sketch yet — rare in
+   *  practice since the gap-closer questions are strong single-question signal, but possible),
+   *  and — the case that actually surfaced this — a bonus/optional topic closing long after the
+   *  step first completed (profile-review's "Answer one more question"). Either way, there's no
+   *  active thread left to reply to; deep-prompts.routes.ts surfaces this so the frontend can show
+   *  a distinct "thanks for sharing, come back anytime" state instead of leaving a composer that
+   *  would just 400 (NO_ACTIVE_TOPIC) on the next message. */
+  topicClosed: boolean;
 }
 
 /**
@@ -270,7 +281,11 @@ export class TopicConversationService {
         });
     }
 
-    return { assistantMessage: this.toMessage(assistantExchange, thread), complete: await this.isFlowStepComplete(userId) };
+    return {
+      assistantMessage: this.toMessage(assistantExchange, thread),
+      complete: await this.isFlowStepComplete(userId),
+      topicClosed: turn.closeTopic
+    };
   }
 
   private async getActiveThread(userId: string): Promise<TopicThread | undefined> {
