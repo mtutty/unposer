@@ -70,8 +70,10 @@ const messageSchema = z.object({ content: z.string().min(1) });
 // there's nothing to chunk — this emits exactly one 'delta' frame carrying the whole reply, then
 // 'done', same envelope shape sandbox.routes.ts uses for its own (genuinely chunked) stream. See
 // utils/sse.ts's header comment for why every chat route speaks this one format regardless of
-// whether its underlying chain actually streams. Preserves the same "complete flips the step"
-// wiring the old WS handler had — see websocket/server.ts's removed handleChatMessage.
+// whether its underlying chain actually streams. flow_progress is TopicConversationService's own
+// call to make (it owns `thread`, `turn.closeTopic`, and the tier check together — see
+// postUserMessage's own comment on why that decision doesn't belong split across two layers) —
+// this route just forwards whatever it returns.
 router.post('/message', requireAuth, validate(messageSchema), async (req: AuthRequest, res, next) => {
   const userId = req.userId!;
   try {
@@ -80,12 +82,11 @@ router.post('/message', requireAuth, validate(messageSchema), async (req: AuthRe
     startSSE(res);
     writeSSEEvent(res, 'delta', { text: outcome.assistantMessage.content });
 
-    const progress = outcome.complete ? await flowService.completeStep(userId, 'deep_prompts') : undefined;
     writeSSEEvent(res, 'done', {
       message: outcome.assistantMessage,
       complete: outcome.complete,
       topicClosed: outcome.topicClosed,
-      progress
+      progress: outcome.progress
     });
     res.end();
   } catch (error: any) {

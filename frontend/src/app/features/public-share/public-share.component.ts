@@ -195,8 +195,11 @@ export class PublicShareComponent implements OnInit {
     });
   }
 
+  // setTimeout, not queueMicrotask — see chat-panel.component.ts's identical scrollToBottom for
+  // why: under zone.js CD, a microtask scheduled from here runs *during* the same drain tick()
+  // itself waits on, so it reads scrollHeight before the new message is actually in the DOM.
   private scrollToBottom(): void {
-    queueMicrotask(() => {
+    setTimeout(() => {
       const el = this.threadEl?.nativeElement;
       if (el) el.scrollTop = el.scrollHeight;
     });

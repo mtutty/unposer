@@ -131,4 +131,6 @@ export interface ProgressionSummary {
   tier: ProgressionTier;
   dimensionsAtConfidence: DimensionKey[];
   singleSessionDimensions: DimensionKey[];
+  /** Closed topic_thread count — stories answered in Step 5 so far. */
+  topicsCompleted: number;
 }

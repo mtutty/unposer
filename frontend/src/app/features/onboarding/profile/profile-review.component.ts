@@ -1,6 +1,7 @@
 import { Component, OnInit, signal, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ProfileService } from '../../../core/profile/profile.service';
+import { CandidateProfile } from '../../../models/profile.model';
 import { FlowService } from '../../../core/flow/flow.service';
 import { STEP_ROUTES } from '../../../models/flow.model';
 import { GeneratingStatusComponent } from '../../../shared/components/generating-status/generating-status.component';
@@ -13,30 +14,49 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
     <span class="eyebrow">Interview Yourself · Your Profile</span>
     <h1>Your profile</h1>
 
-    @if (profileService.progression(); as prog) {
-      @if (prog.tier !== 'none') {
-        <div class="card banner more-questions">
-          <p>
-            @if (prog.singleSessionDimensions.length) {
-              Based on one session so far — this will sharpen as you share more, especially across different days.
-            } @else {
-              Want to sharpen this further? A few more stories go a long way.
-            }
-          </p>
-          <a class="btn btn-secondary" [routerLink]="deepPromptsRoute">Answer one more question</a>
-        </div>
+    @if (profileService.profile()) {
+      @if (profileService.progression(); as prog) {
+        @if (prog.tier !== 'none') {
+          <div class="card banner more-questions">
+            <p>
+              @if (prog.singleSessionDimensions.length) {
+                Based on one session so far — this will sharpen as you share more, especially across different days.
+              } @else {
+                Want to sharpen this further? A few more stories go a long way.
+              }
+            </p>
+            <a class="btn btn-secondary" [routerLink]="deepPromptsRoute">Answer one more question</a>
+          </div>
+        }
       }
     }
 
     @if (!profileService.profile()) {
       @if (!profileService.synthesizing()) {
-        <p class="lede">
-          We'll pull together your resume, your goals, and your stories into one narrative profile.
-        </p>
         @if (profileService.synthesisError()) {
           <p class="error-line">{{ profileService.synthesisError() }}</p>
         }
-        <button class="btn btn-primary" (click)="generate()">Generate my profile</button>
+        <div class="option-stack">
+          @if (profileService.progression(); as prog) {
+            @if (prog.tier !== 'none') {
+              <div class="card option-card">
+                <div class="option-text">
+                  <h4>Add another story</h4>
+                  <p>{{ storiesPrompt(prog.topicsCompleted, prog.singleSessionDimensions.length > 0) }}</p>
+                </div>
+                <a class="btn btn-secondary" [routerLink]="deepPromptsRoute">Answer one more question</a>
+              </div>
+            }
+          }
+
+          <div class="card option-card option-preferred">
+            <div class="option-text">
+              <h4>See your profile</h4>
+              <p>We'll pull together your resume, your goals, and your stories into one narrative profile.</p>
+            </div>
+            <button class="btn btn-primary" (click)="generate()">View my profile</button>
+          </div>
+        </div>
       }
       <app-generating-status class="top-generating" [active]="profileService.synthesizing()" [stages]="generatingStages" />
     }
@@ -52,7 +72,7 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
         <h3 class="section-title">What we picked up on</h3>
         <p class="meta">
           Inferred from your stories — never from a rating. Flag anything that doesn't sound like you.
-          <a routerLink="/how-your-profile-works">How this works</a>
+          <a routerLink="/how-your-profile-works" target="_blank" rel="noopener">How this works</a>
         </p>
         <div class="insight-list">
           @for (insight of p.profile_data.insights; track insight.id) {
@@ -61,22 +81,19 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
               <p class="statement">{{ insight.statement }}</p>
               <p class="meta evidence">"{{ insight.evidence }}"</p>
               @if (insight.status === 'active') {
-                <button class="btn btn-ghost" (click)="flag(insight.id)" [disabled]="flaggingId() === insight.id">
-                  {{ flaggingId() === insight.id ? 'Sending a follow-up…' : 'Not quite right' }}
+                <button class="btn btn-ghost refine" (click)="flag(insight.id)" [disabled]="flaggingId() === insight.id">
+                  {{ flaggingId() === insight.id ? 'Sending a follow-up…' : 'Refine this' }}
                 </button>
               } @else if (insight.status === 'flagged') {
                 <span class="stamp stamp-brick">Follow-up sent</span>
+                @if (reaskQuestionFor(p, insight.id); as question) {
+                  <p class="reask-question">We asked in your stories chat: <em>"{{ question }}"</em></p>
+                  <a class="btn btn-secondary" [routerLink]="deepPromptsRoute">Answer it now</a>
+                }
               }
             </div>
           }
         </div>
-
-        @if (reaskBanner()) {
-          <div class="card banner banner-brick reask-banner">
-            <p>We sent a follow-up question to your stories chat: <em>"{{ reaskBanner() }}"</em></p>
-            <a class="btn btn-secondary" [routerLink]="deepPromptsRoute">Answer it now</a>
-          </div>
-        }
 
         <h3 class="section-title">Work style &amp; goals</h3>
         <div class="grid-2">
@@ -115,9 +132,39 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
     changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
-      .lede {
-        color: var(--ink-soft);
-        max-width: 42em;
+      .option-stack {
+        margin-top: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .option-card {
+        padding: 1.5rem 1.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+      }
+
+      .option-preferred {
+        border-left: 3px solid var(--brass-strong);
+      }
+
+      .option-text {
+        flex: 1;
+        min-width: 220px;
+
+        h4 {
+          font-size: 1.05rem;
+          margin-bottom: 0.3em;
+        }
+
+        p {
+          margin: 0;
+          color: var(--ink-soft);
+        }
       }
 
       .top-generating {
@@ -145,8 +192,13 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
         display: flex;
         flex-direction: column;
         gap: 0.4rem;
+      }
 
-        &.flagged {
+      // Flagged still has a live next step (answer the follow-up) — dim the now-superseded
+      // statement/evidence, but not the whole card, so that action doesn't read as inert.
+      .insight.flagged {
+        .statement,
+        .evidence {
           opacity: 0.7;
         }
       }
@@ -160,8 +212,24 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
         font-style: italic;
       }
 
-      .reask-banner {
-        margin-top: 1.25rem;
+      // Muted, not alarmed — this is "tune this up," not "this is wrong."
+      .refine {
+        color: var(--ink-soft);
+
+        &:hover:not(:disabled) {
+          color: var(--ink);
+        }
+      }
+
+      .reask-question {
+        margin: 0.6rem 0 0;
+        font-size: 0.88rem;
+        color: var(--ink-soft);
+
+        em {
+          color: var(--ink);
+          font-style: italic;
+        }
       }
 
       .more-questions {
@@ -216,7 +284,6 @@ import { ProfileCorrectionsComponent } from '../../../shared/components/profile-
 export class ProfileReviewStepComponent implements OnInit {
   approving = signal(false);
   flaggingId = signal<string | null>(null);
-  reaskBanner = signal('');
 
   deepPromptsRoute = STEP_ROUTES['deep_prompts'];
   sandboxRoute = STEP_ROUTES['sandbox'];
@@ -247,13 +314,20 @@ export class ProfileReviewStepComponent implements OnInit {
   flag(insightId: string): void {
     this.flaggingId.set(insightId);
     this.profileService.flagInsight(insightId).subscribe({
-      next: (result) => {
-        this.reaskBanner.set(result.reaskQuestion);
+      next: () => {
         this.flaggingId.set(null);
         this.flow.loadProgress().subscribe();
       },
       error: () => this.flaggingId.set(null)
     });
+  }
+
+  // Reads the question straight off the persisted profile (correction_log) rather than
+  // component state, so it survives a reload/revisit — not just the moment right after flagging —
+  // and stays correctly paired with its insight even if more than one is flagged at once.
+  reaskQuestionFor(p: CandidateProfile, insightId: string): string | null {
+    const entries = p.correction_log?.filter((c) => c.insightId === insightId) ?? [];
+    return entries.length ? entries[entries.length - 1].reaskQuestion : null;
   }
 
   approve(): void {
@@ -269,5 +343,38 @@ export class ProfileReviewStepComponent implements OnInit {
 
   statusLabel(status: string): string {
     return status === 'approved' ? 'Approved' : status === 'pending_review' ? 'Ready for review' : 'Draft';
+  }
+
+  storiesLabel(count: number): string {
+    const n = count ?? 0;
+    return `${n} ${n === 1 ? 'story' : 'stories'}`;
+  }
+
+  // Bands tuned to the personality engine's own milestones (spec §3.5): 3-5 is roughly where the
+  // first dimensions start crossing medium confidence, 6-9 is mid-way through all 11, 10+ is
+  // past "sketch" territory where volume stops being the bottleneck and same-day-only evidence
+  // (singleSession) becomes the more useful thing to fix — see progression.service.ts.
+  storiesPrompt(count: number, singleSession: boolean): string {
+    const n = count ?? 0;
+    const shared = this.storiesLabel(n);
+
+    if (n <= 2) {
+      return `You've shared ${shared} so far — every one helps us build a fuller picture. A few more go a long way toward a sharper profile.`;
+    }
+    if (n <= 5) {
+      return (
+        `You've shared ${shared} so far — good progress. A few more will round out the areas we haven't heard much about yet` +
+        (singleSession ? ', especially if one comes from a different day than the rest.' : '.')
+      );
+    }
+    if (n <= 9) {
+      return (
+        `You've shared ${shared} so far — we're getting a well-rounded picture. A couple more would help us reach full confidence across the board` +
+        (singleSession ? ', particularly one from a different day — right now they all came from one sitting.' : '.')
+      );
+    }
+    return singleSession
+      ? `You've shared ${shared} so far — that's a rich set. They've all come from one sitting though, so at this point a story from a different day will sharpen your profile more than another one today.`
+      : `You've shared ${shared} so far — that's a rich, well-rounded set. Add another any time something comes to mind, but your profile already has plenty to work with.`;
   }
 }

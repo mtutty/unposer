@@ -479,8 +479,15 @@ export class ChatPanelComponent implements OnInit, OnDestroy {
     });
   }
 
+  // Deliberately setTimeout, not queueMicrotask: this app runs classic zone.js change detection
+  // (see app.config.ts's provideZoneChangeDetection), which defers the actual tick() that patches
+  // a new message into the DOM until its own microtask queue drains — but a queueMicrotask
+  // callback scheduled from here is itself one more microtask in that same queue, so it was
+  // running *during* that drain, before zone.js concluded the queue was empty and ticked. That
+  // read scrollHeight one message behind, every time — the "auto-scroll doesn't work" bug. A
+  // macrotask is guaranteed to run in a later event-loop turn, strictly after that tick.
   private scrollToBottom(): void {
-    queueMicrotask(() => {
+    setTimeout(() => {
       const el = this.threadEl?.nativeElement;
       if (el) el.scrollTop = el.scrollHeight;
     });

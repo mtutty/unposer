@@ -17,6 +17,10 @@ export interface TemporalDepthSummary {
    *  produce a real result with a visible caveat, not be blocked). */
   singleSessionDimensions: DimensionKey[];
   dimensionsAtConfidence: DimensionKey[];
+  /** Count of closed topic_thread rows (Step 5 stories answered so far, library + ad hoc
+   *  re-asks alike) — drives the "N stories shared" signal next to the profile_review page's
+   *  "answer one more question" option, so that offer isn't made blind to what's already given. */
+  topicsCompleted: number;
 }
 
 export class ProgressionService {
@@ -161,14 +165,17 @@ export class ProgressionService {
   }
 
   async getTemporalDepthSummary(userId: string): Promise<TemporalDepthSummary> {
-    const latest = await this.loadLatestScores(userId);
+    const [latest, topicsCompleted] = await Promise.all([
+      this.loadLatestScores(userId),
+      db('topic_thread').where({ user_id: userId, status: 'closed' }).count<{ count: string }[]>('id').then((rows) => Number(rows[0]?.count ?? 0))
+    ]);
     const atMediumOrAbove = ALL_DIMENSIONS.filter((d) => {
       const score = latest[d];
       return !!score && CONFIDENCE_RANK[score.confidence] >= MEDIUM_CONFIDENCE_RANK;
     });
     const singleSessionDimensions = atMediumOrAbove.filter((d) => latest[d]!.distinct_occasions <= 1);
 
-    return { singleSessionDimensions, dimensionsAtConfidence: atMediumOrAbove };
+    return { singleSessionDimensions, dimensionsAtConfidence: atMediumOrAbove, topicsCompleted };
   }
 
   private async loadLatestScores(userId: string): Promise<Partial<Record<DimensionKey, DimensionScore>>> {

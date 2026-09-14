@@ -27,6 +27,7 @@ function makeBuilder() {
   builder.returning = jest.fn();
   builder.update = jest.fn();
   builder.first = jest.fn();
+  builder.count = jest.fn(() => Promise.resolve([{ count: '0' }]));
   return builder;
 }
 
@@ -300,10 +301,12 @@ describe('ProgressionService.getTemporalDepthSummary', () => {
       scoreRow({ dimension: 'openness', confidence: 'medium-high', distinct_occasions: 3 }),
       scoreRow({ dimension: 'motivation', confidence: 'low', distinct_occasions: 1 }) // below medium — excluded entirely
     ]);
+    builder.count.mockResolvedValueOnce([{ count: '4' }]);
 
     const result = await service.getTemporalDepthSummary('user-1');
 
     expect(result.dimensionsAtConfidence.sort()).toEqual(['openness', 'work_style']);
     expect(result.singleSessionDimensions).toEqual(['work_style']);
+    expect(result.topicsCompleted).toBe(4);
   });
 });

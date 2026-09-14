@@ -19,6 +19,9 @@ import { EvidenceService } from './evidence.service';
 jest.mock('./email.service');
 import { EmailService } from './email.service';
 
+jest.mock('./flow.service');
+import { FlowService } from './flow.service';
+
 jest.mock('../ai/topic-elicitation.chain', () => ({ runTopicTurn: jest.fn() }));
 import { runTopicTurn } from '../ai/topic-elicitation.chain';
 
@@ -84,6 +87,7 @@ describe('TopicConversationService', () => {
   const mockClearDormancy = ProgressionService.prototype.clearDormancy as jest.Mock;
   const mockIndexDeepPrompt = EvidenceService.prototype.indexDeepPromptSubstrate as jest.Mock;
   const mockIndexDimensionEvidenceSpans = EvidenceService.prototype.indexDimensionEvidenceSpans as jest.Mock;
+  const mockCompleteStep = FlowService.prototype.completeStep as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -277,6 +281,8 @@ describe('TopicConversationService', () => {
       builder.first
         .mockResolvedValueOnce({ steps_state: { deep_prompts: 'in_progress' } }) // isFlowStepComplete: flow_progress lookup
         .mockResolvedValueOnce({ tier: 'sketch' }); // isFlowStepComplete: progression row lookup
+      const freshProgress = { user_id: 'user-1', current_step: 'profile_review', steps_state: { deep_prompts: 'complete' } };
+      mockCompleteStep.mockResolvedValueOnce(freshProgress);
 
       const outcome = await service.postUserMessage('user-1', 'app', 'my answer');
 
@@ -306,10 +312,12 @@ describe('TopicConversationService', () => {
       );
       expect(builder.update).not.toHaveBeenCalled(); // topic stays open
       expect(mockRecomputeDimensions).not.toHaveBeenCalled(); // re-score only triggers on topic close (spec §9.2)
+      expect(mockCompleteStep).toHaveBeenCalledWith('user-1', 'deep_prompts');
       expect(outcome).toEqual({
         assistantMessage: expect.objectContaining({ id: 'ex-assistant', content: 'Tell me more.' }),
         complete: true,
-        topicClosed: false
+        topicClosed: false,
+        progress: freshProgress
       });
     });
 
@@ -428,6 +436,85 @@ describe('TopicConversationService', () => {
         expect.objectContaining({ question: expect.objectContaining({ prompt: 'Say more about that call you made.', dimensionLoads: { dominance: 'P' } }) })
       );
       expect(mockExtractAndPersist).toHaveBeenCalledWith('ex-user', 'Say more about that call you made.', 'my answer', ['dominance'], false);
+    });
+
+    // Regression: an ad hoc thread re-asking a pre-personality-engine insight legitimately has
+    // zero target dimensions (profile.service.ts's reaskDimensionsFor), so `ad_hoc_dimensions`
+    // is `[]`, not `null` — resolveQuestion must still recognize this as ad hoc rather than
+    // falling through to UNKNOWN_QUESTION (a real bug: `[].length` is falsy).
+    it('handles an ad hoc thread with no target dimensions (empty array, not null)', async () => {
+      const adHocThread = threadFixture({ question_id: 'reask-old-insight', ad_hoc_dimensions: [] });
+      builder.first.mockResolvedValueOnce(adHocThread); // getActiveThread
+      builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-opener', role: 'assistant', text: 'Tell me more about that.' })]);
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user', text: 'my answer' })]); // insert user exchange
+      builder.select.mockResolvedValueOnce([
+        exchangeFixture({ id: 'ex-opener', role: 'assistant', text: 'Tell me more about that.' }),
+        exchangeFixture({ id: 'ex-user', role: 'user', text: 'my answer' })
+      ]); // getExchanges (history)
+      mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it.', closeTopic: true, closedBy: 'model' });
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it.' })]);
+      builder.first
+        .mockResolvedValueOnce({ steps_state: { deep_prompts: 'in_progress' } })
+        .mockResolvedValueOnce({ tier: 'sketch' });
+
+      await expect(service.postUserMessage('user-1', 'app', 'my answer')).resolves.toMatchObject({ topicClosed: true });
+
+      expect(mockRunTopicTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ question: expect.objectContaining({ prompt: 'Tell me more about that.', dimensionLoads: {} }) })
+      );
+    });
+
+    // Regression: profile.routes.ts's POST /insights/flag calls reopenStep('deep_prompts') right
+    // after opening the ad hoc thread, which flips steps_state.deep_prompts back to 'in_progress'
+    // to drive the rail — defeating isFlowStepComplete's one guard against firing on every turn
+    // once tier is already past 'none'. Without the ad-hoc check, this turn would wrongly report
+    // complete:true on the very first correction reply (killing the composer, showing "Review
+    // your profile") even though the model asked a genuine follow-up (closeTopic:false).
+    it('never reports complete:true for an ad hoc thread, even when reopenStep has put steps_state back to in_progress and tier is already past none', async () => {
+      const adHocThread = threadFixture({ question_id: 'reask-abc', ad_hoc_dimensions: ['dominance'] });
+      builder.first.mockResolvedValueOnce(adHocThread); // getActiveThread
+      builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-opener', role: 'assistant', text: 'Say more about that call you made.' })]);
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user', text: 'my answer' })]); // insert user exchange
+      builder.select.mockResolvedValueOnce([
+        exchangeFixture({ id: 'ex-opener', role: 'assistant', text: 'Say more about that call you made.' }),
+        exchangeFixture({ id: 'ex-user', role: 'user', text: 'my answer' })
+      ]); // getExchanges (history)
+      mockRunTopicTurn.mockResolvedValueOnce({ reply: 'And what happened after that?', closeTopic: false, closedBy: 'model' });
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'And what happened after that?' })]);
+      // Deliberately NOT mocking builder.first for flow_progress/progression — isFlowStepComplete
+      // must never be reached (and thus never queried) for an ad hoc thread; asserting complete is
+      // false purely from thread.ad_hoc_dimensions is the point of this test.
+
+      const outcome = await service.postUserMessage('user-1', 'app', 'my answer');
+
+      expect(outcome).toMatchObject({ complete: false, topicClosed: false, progress: undefined });
+      expect(mockCompleteStep).not.toHaveBeenCalled(); // still mid-conversation — nothing to restore yet
+    });
+
+    // The other half of the fix: an ad hoc thread closing doesn't "complete" the step (that
+    // wording, and the banner it drives client-side, is reserved for a library thread finishing
+    // for the first time), but it must still restore steps_state.deep_prompts (and current_step)
+    // now that flagInsight's reopenStep moved them away from 'complete' — otherwise the rail's
+    // checkmark and the dashboard's "Continue" link would dangle on deep_prompts forever after
+    // every correction, however many turns it took to close.
+    it('restores flow_progress via completeStep when an ad hoc thread closes, without reporting complete:true', async () => {
+      const adHocThread = threadFixture({ question_id: 'reask-abc', ad_hoc_dimensions: [] });
+      builder.first.mockResolvedValueOnce(adHocThread); // getActiveThread
+      builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-opener', role: 'assistant', text: 'Tell me more about that.' })]);
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user', text: 'my answer' })]); // insert user exchange
+      builder.select.mockResolvedValueOnce([
+        exchangeFixture({ id: 'ex-opener', role: 'assistant', text: 'Tell me more about that.' }),
+        exchangeFixture({ id: 'ex-user', role: 'user', text: 'my answer' })
+      ]); // getExchanges (history)
+      mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it, thanks.', closeTopic: true, closedBy: 'model' });
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it, thanks.' })]);
+      const restoredProgress = { user_id: 'user-1', current_step: 'profile_review', steps_state: { deep_prompts: 'complete' } };
+      mockCompleteStep.mockResolvedValueOnce(restoredProgress);
+
+      const outcome = await service.postUserMessage('user-1', 'app', 'my answer');
+
+      expect(mockCompleteStep).toHaveBeenCalledWith('user-1', 'deep_prompts');
+      expect(outcome).toMatchObject({ complete: false, topicClosed: true, progress: restoredProgress });
     });
   });
 

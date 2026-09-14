@@ -214,24 +214,50 @@ describe('deep-prompts.routes POST /message', () => {
     expect(mockFlowService.completeStep).not.toHaveBeenCalled();
   });
 
-  it('completes the step and includes the resulting progress in "done" when the turn finishes', async () => {
+  // TopicConversationService now owns the decision of whether/how to update flow_progress (it's
+  // the one place with both the thread's type and the turn's outcome in scope — see its own
+  // postUserMessage comment) and returns the refreshed row as `progress`; this route's only job
+  // is to forward whatever it gets, verbatim, rather than deciding for itself whether to call
+  // flowService.completeStep — see the sibling test below for the ad hoc "restore" case, which
+  // also needs `progress` forwarded despite complete staying false.
+  it('forwards the resulting progress in "done" when the turn completes the step', async () => {
     mockTopicConversation.postUserMessage.mockResolvedValue({
       assistantMessage: { id: 'm2', content: 'Thanks — that closes this one out.' } as any,
       complete: true,
-      topicClosed: true
+      topicClosed: true,
+      progress: { current_step: 'profile_review' } as any
     });
-    mockFlowService.completeStep.mockResolvedValue({ currentStep: 'profile_review' } as any);
 
     const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'done' });
 
-    expect(mockFlowService.completeStep).toHaveBeenCalledWith('u1', 'deep_prompts');
+    expect(mockFlowService.completeStep).not.toHaveBeenCalled(); // the service already did this, not the route
     const frames = parseSSE(res.text);
     expect(frames[1]).toEqual({
       type: 'done',
       message: { id: 'm2', content: 'Thanks — that closes this one out.' },
       complete: true,
       topicClosed: true,
-      progress: { currentStep: 'profile_review' }
+      progress: { current_step: 'profile_review' }
+    });
+  });
+
+  it('forwards progress on an ad hoc correction thread closing too, even though complete stays false', async () => {
+    mockTopicConversation.postUserMessage.mockResolvedValue({
+      assistantMessage: { id: 'm3', content: 'Got it, thanks.' } as any,
+      complete: false,
+      topicClosed: true,
+      progress: { current_step: 'profile_review' } as any
+    });
+
+    const res = await request(app).post('/message').set('x-test-user', 'u1').send({ content: 'that answers it' });
+
+    const frames = parseSSE(res.text);
+    expect(frames[1]).toEqual({
+      type: 'done',
+      message: { id: 'm3', content: 'Got it, thanks.' },
+      complete: false,
+      topicClosed: true,
+      progress: { current_step: 'profile_review' }
     });
   });
 

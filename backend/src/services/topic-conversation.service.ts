@@ -1,5 +1,5 @@
 import { db } from '../db/connection';
-import { AppError, Channel, DimensionKey, Exchange, Message, TopicThread } from '../types';
+import { AppError, Channel, DimensionKey, Exchange, FlowProgress, Message, TopicThread } from '../types';
 import { getQuestion, LibraryQuestion } from '../models/question-library';
 import { TopicSelectionService } from './topic-selection.service';
 import { DimensionScoringService } from './dimension-scoring.service';
@@ -7,6 +7,7 @@ import { ScoringAggregationService } from './scoring-aggregation.service';
 import { ProgressionService } from './progression.service';
 import { EvidenceService } from './evidence.service';
 import { EmailService } from './email.service';
+import { FlowService } from './flow.service';
 import { runTopicTurn } from '../ai/topic-elicitation.chain';
 import { computeOccasionId } from '../utils/occasion';
 
@@ -24,6 +25,11 @@ export interface TopicTurnOutcome {
    *  a distinct "thanks for sharing, come back anytime" state instead of leaving a composer that
    *  would just 400 (NO_ACTIVE_TOPIC) on the next message. */
   topicClosed: boolean;
+  /** The refreshed flow_progress row, present exactly when this turn changed
+   *  steps_state.deep_prompts — either completing it for the first time (`complete: true`) or
+   *  restoring it after an ad hoc correction thread closed (see postUserMessage's own comment).
+   *  deep-prompts.routes.ts forwards this verbatim; undefined means nothing to forward. */
+  progress?: FlowProgress;
 }
 
 /**
@@ -46,6 +52,7 @@ export class TopicConversationService {
   private progression = new ProgressionService();
   private evidence = new EvidenceService();
   private email = new EmailService();
+  private flow = new FlowService();
 
   /** Returns the open thread's full exchange history, or opens a freshly-selected topic and
    *  returns its single opening exchange — the library's own question prompt, inserted directly
@@ -281,10 +288,37 @@ export class TopicConversationService {
         });
     }
 
+    // Whether/how this turn should move flow_progress.steps_state.deep_prompts, decided here (the
+    // one place that has both the thread's type and the turn's outcome) rather than split between
+    // this service's `complete` flag and the route deciding whether to act on it — that split is
+    // exactly what caused the "message box disappears after a bonus follow-up" bug and this ad hoc
+    // one, both fixed by ad-hoc-ing another special case into the route/frontend instead of fixing
+    // the one place that should own this decision. Two distinct, non-overlapping triggers:
+    //  - A library-question thread reaching tier != 'none' for the first time (existing
+    //    isFlowStepComplete heuristic) — the *original* step completing. `complete` (below) stays
+    //    true only for this case, since it also drives the chat UI's "Step complete" banner text,
+    //    which would be a misleading thing to show for an ad hoc correction thread's close.
+    //  - An ad hoc thread closing (turn.closeTopic) — never "completes" the step (it was already
+    //    complete; that's *why* profile.service.ts could open a correction against it in the first
+    //    place), it only *restores* steps_state.deep_prompts (and current_step, which reopenStep
+    //    moved to 'deep_prompts') now that the thread reopened for is done. completeStep is safe to
+    //    call here even though nothing "newly completed": current_step is already 'deep_prompts' at
+    //    this point, so its own "don't regress if we're already past this step" guard doesn't apply
+    //    and it correctly advances back to wherever comes next (profile_review).
+    let complete = false;
+    let progress: FlowProgress | undefined;
+    if (thread.ad_hoc_dimensions == null) {
+      complete = await this.isFlowStepComplete(userId);
+      if (complete) progress = await this.flow.completeStep(userId, 'deep_prompts');
+    } else if (turn.closeTopic) {
+      progress = await this.flow.completeStep(userId, 'deep_prompts');
+    }
+
     return {
       assistantMessage: this.toMessage(assistantExchange, thread),
-      complete: await this.isFlowStepComplete(userId),
-      topicClosed: turn.closeTopic
+      complete,
+      topicClosed: turn.closeTopic,
+      progress
     };
   }
 
@@ -300,7 +334,12 @@ export class TopicConversationService {
     const libraryQuestion = getQuestion(thread.question_id);
     if (libraryQuestion) return libraryQuestion;
 
-    if (thread.ad_hoc_dimensions?.length) {
+    // Presence of the column (even an empty array) is what marks this thread as ad hoc — a
+    // library-opened thread never sets it (stays null). An older/non-personality-engine insight's
+    // re-ask legitimately has zero target dimensions (see profile.service.ts's
+    // reaskDimensionsFor), so `?.length` here would wrongly fall through to the "unknown
+    // question" error below for exactly the case this branch exists to handle.
+    if (thread.ad_hoc_dimensions != null) {
       const [opener] = await this.getExchanges(thread.id);
       return {
         id: thread.question_id,
