@@ -52,7 +52,7 @@ interface DisplayMessage {
         </div>
       } @else {
         <form class="composer" (ngSubmit)="send()">
-          <textarea [(ngModel)]="draft" name="draft" rows="2" placeholder="Write your answer…" (keydown.enter)="onEnter($event)"></textarea>
+          <textarea [(ngModel)]="draft" name="draft" rows="5" placeholder="Write your answer…" (keydown.enter)="onEnter($event)"></textarea>
           <button type="submit" class="btn btn-primary" [disabled]="!draft.trim() || thinking()">Send</button>
         </form>
       }
@@ -69,7 +69,9 @@ interface DisplayMessage {
       .chat {
         display: flex;
         flex-direction: column;
-        height: 28rem;
+        // Bumped alongside the composer's rows="5" (was 28rem for a 2-line composer) so .thread
+        // doesn't get squeezed down to almost nothing by the now much taller textarea.
+        height: 32rem;
         gap: 0.75rem;
       }
 
@@ -149,8 +151,8 @@ interface DisplayMessage {
         padding: 0.7em 0.9em;
         border: 1px solid var(--border);
         border-radius: 4px;
-        min-height: 3.6em;
-        max-height: 8em;
+        min-height: 8.75em;
+        max-height: 14em;
       }
     `
   ]

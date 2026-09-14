@@ -42,7 +42,7 @@ interface DisplayMessage {
           </div>
 
           <form class="composer" (ngSubmit)="send()">
-            <textarea [(ngModel)]="draft" name="draft" rows="2" placeholder="Ask a question…"></textarea>
+            <textarea [(ngModel)]="draft" name="draft" rows="5" placeholder="Ask a question…"></textarea>
             <button type="submit" class="btn btn-primary" [disabled]="!draft.trim() || sending()">Send</button>
           </form>
         </div>
@@ -97,10 +97,11 @@ interface DisplayMessage {
         flex-direction: column;
         // flex-basis (not min-height) for the 420px target — see logistics-step.component.ts's
         // identical comment: min-height is a hard floor that can overflow the page when real
-        // available space is tighter than 420px.
+        // available space is tighter than 420px. No overflow:hidden and no min-height:0 override
+        // here (deliberately) — on a genuinely tight viewport this can still need more room than
+        // it's been given; better to let that spill into .screen's own overflow-y:auto fallback
+        // than to silently clip the composer/send button.
         flex: 1 1 420px;
-        min-height: 0;
-        overflow: hidden;
       }
 
       .thread {
@@ -131,8 +132,8 @@ interface DisplayMessage {
           padding: 0.7em 0.9em;
           border: 1px solid var(--border);
           border-radius: var(--radius-md);
-          min-height: 3.6em;
-          max-height: 8em;
+          min-height: 8.75em;
+          max-height: 14em;
         }
       }
     `
