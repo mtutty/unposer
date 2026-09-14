@@ -331,12 +331,28 @@ export class TopicConversationService {
     };
   }
 
-  /** Flow addendum §2: Step 5 completes in flow_progress the moment progression.tier first
-   *  reaches Sketch (any dimension at medium confidence) — not a fixed question count. Real tier
-   *  lookup as of Iteration 5 (progression.service.ts); the placeholder this replaced ("core set
-   *  closed") is gone. Callers (deep-prompts.routes.ts) didn't need to change. */
+  /** Flow addendum §2: Step 5 completes in flow_progress the moment progression.tier *first*
+   *  reaches Sketch (any dimension at medium confidence) — not a fixed question count, and,
+   *  per that same wording, a one-time transition, not "for as long as tier stays above none."
+   *  Real tier lookup as of Iteration 5 (progression.service.ts); the placeholder this replaced
+   *  ("core set closed") is gone. Callers (deep-prompts.routes.ts) didn't need to change.
+   *
+   *  The `steps_state` check guards exactly that one-time-ness: once tier has ever left 'none' it
+   *  stays there, so without this guard every later turn — including a deliberate bonus/optional
+   *  question from profile-review's "Answer one more question" banner, long after this step first
+   *  completed — would also report `complete: true`. The frontend's chat-panel treats that as
+   *  terminal (hides the composer, shows the "done" banner) the moment it sees it once; a bonus
+   *  question's own follow-up reply would then arrive with nowhere for the candidate to type a
+   *  reply. Reporting false once the step is already marked complete keeps the composer usable
+   *  for as many optional follow-ups as the candidate wants — flowService.completeStep is a no-op
+   *  past that point anyway (steps_state.deep_prompts is already 'complete'), so this doesn't
+   *  change what actually gets persisted, only what gets reported back to the frontend. */
   private async isFlowStepComplete(userId: string): Promise<boolean> {
-    const row = await db('progression').where({ user_id: userId }).first();
-    return !!row && row.tier !== 'none';
+    const [progressRow, progressionRow] = await Promise.all([
+      db('flow_progress').where({ user_id: userId }).first(),
+      db('progression').where({ user_id: userId }).first()
+    ]);
+    if (progressRow?.steps_state?.deep_prompts === 'complete') return false;
+    return !!progressionRow && progressionRow.tier !== 'none';
   }
 }

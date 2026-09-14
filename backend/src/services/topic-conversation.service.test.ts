@@ -274,7 +274,9 @@ describe('TopicConversationService', () => {
       ]); // getExchanges (history)
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Tell me more.', closeTopic: false, closedBy: 'model' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Tell me more.' })]);
-      builder.first.mockResolvedValueOnce({ tier: 'sketch' }); // isFlowStepComplete: progression row lookup
+      builder.first
+        .mockResolvedValueOnce({ steps_state: { deep_prompts: 'in_progress' } }) // isFlowStepComplete: flow_progress lookup
+        .mockResolvedValueOnce({ tier: 'sketch' }); // isFlowStepComplete: progression row lookup
 
       const outcome = await service.postUserMessage('user-1', 'app', 'my answer');
 
@@ -316,7 +318,9 @@ describe('TopicConversationService', () => {
       builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it, thanks.', closeTopic: true, closedBy: 'user' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it, thanks.' })]);
-      builder.first.mockResolvedValueOnce({ tier: 'sketch' });
+      builder.first
+        .mockResolvedValueOnce({ steps_state: { deep_prompts: 'in_progress' } })
+        .mockResolvedValueOnce({ tier: 'sketch' });
       const extractedRows = [{ id: 'de-1', dimension: 'openness' }];
       mockExtractAndPersist.mockResolvedValueOnce(extractedRows);
 
@@ -339,7 +343,9 @@ describe('TopicConversationService', () => {
       builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it, thanks.', closeTopic: true, closedBy: 'model' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it, thanks.' })]);
-      builder.first.mockResolvedValueOnce({ tier: 'sketch' });
+      builder.first
+        .mockResolvedValueOnce({ steps_state: { deep_prompts: 'in_progress' } })
+        .mockResolvedValueOnce({ tier: 'sketch' });
       mockRecomputeDimensions.mockRejectedValueOnce(new Error('boom'));
 
       const outcome = await service.postUserMessage('user-1', 'app', "that's all I've got");
@@ -353,9 +359,26 @@ describe('TopicConversationService', () => {
       builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Ok.', closeTopic: false, closedBy: 'model' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant' })]);
-      builder.first.mockResolvedValueOnce({ tier: 'none' });
+      builder.first
+        .mockResolvedValueOnce({ steps_state: { deep_prompts: 'in_progress' } })
+        .mockResolvedValueOnce({ tier: 'none' });
 
       const outcome = await service.postUserMessage('user-1', 'app', 'partial');
+
+      expect(outcome.complete).toBe(false);
+    });
+
+    it('reports the step incomplete on a later turn even once tier is past "none", once the step is already marked complete (the "message box disappeared after a bonus follow-up" bug — see isFlowStepComplete\'s own comment)', async () => {
+      builder.first.mockResolvedValueOnce(threadFixture({ question_id: 'Q1' }));
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
+      builder.select.mockResolvedValueOnce([exchangeFixture({ id: 'ex-user', role: 'user' })]);
+      mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Another question for you.', closeTopic: false, closedBy: 'model' });
+      builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Another question for you.' })]);
+      builder.first
+        .mockResolvedValueOnce({ steps_state: { deep_prompts: 'complete' } }) // already complete from a prior session
+        .mockResolvedValueOnce({ tier: 'core_persona' }); // tier has long since passed 'none' too
+
+      const outcome = await service.postUserMessage('user-1', 'app', 'answering a bonus question');
 
       expect(outcome.complete).toBe(false);
     });
@@ -372,7 +395,9 @@ describe('TopicConversationService', () => {
       ]); // getExchanges (history)
       mockRunTopicTurn.mockResolvedValueOnce({ reply: 'Got it.', closeTopic: true, closedBy: 'model' });
       builder.returning.mockResolvedValueOnce([exchangeFixture({ id: 'ex-assistant', role: 'assistant', text: 'Got it.' })]);
-      builder.first.mockResolvedValueOnce({ tier: 'sketch' });
+      builder.first
+        .mockResolvedValueOnce({ steps_state: { deep_prompts: 'in_progress' } })
+        .mockResolvedValueOnce({ tier: 'sketch' });
 
       await service.postUserMessage('user-1', 'app', 'my answer');
 
