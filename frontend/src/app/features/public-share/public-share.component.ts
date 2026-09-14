@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, signal, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -27,7 +27,7 @@ interface DisplayMessage {
         </div>
 
         <div class="card chat-frame">
-          <div class="thread">
+          <div class="thread" #threadEl>
             @for (message of messages(); track $index) {
               <div class="chat-bubble" [class.from-user]="message.role === 'user'" [class.from-assistant]="message.role === 'assistant'">
                 {{ message.content }}
@@ -151,6 +151,8 @@ export class PublicShareComponent implements OnInit {
   sending = signal(false);
   private token = '';
 
+  @ViewChild('threadEl') threadEl?: ElementRef<HTMLDivElement>;
+
   constructor(private route: ActivatedRoute, private publicShare: PublicShareService) {}
 
   ngOnInit(): void {
@@ -174,11 +176,13 @@ export class PublicShareComponent implements OnInit {
     this.messages.update((list) => [...list, { role: 'user', content: question }]);
     this.draft = '';
     this.sending.set(true);
+    this.scrollToBottom();
 
     this.publicShare.sendMessage(this.token, history, question).subscribe({
       next: ({ reply }) => {
         this.messages.update((list) => [...list, { role: 'assistant', content: reply }]);
         this.sending.set(false);
+        this.scrollToBottom();
       },
       error: (err) => {
         this.messages.update((list) => [
@@ -186,7 +190,15 @@ export class PublicShareComponent implements OnInit {
           { role: 'assistant', content: err.error?.error?.message || 'Something went wrong.' }
         ]);
         this.sending.set(false);
+        this.scrollToBottom();
       }
+    });
+  }
+
+  private scrollToBottom(): void {
+    queueMicrotask(() => {
+      const el = this.threadEl?.nativeElement;
+      if (el) el.scrollTop = el.scrollHeight;
     });
   }
 }
