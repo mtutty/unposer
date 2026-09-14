@@ -271,9 +271,13 @@ import { Channel, STEP_ROUTES } from '../../../models/flow.model';
       .chat-frame {
         margin-top: 1.5rem;
         padding: 1.5rem;
-        flex: 1;
+        // flex-basis (not min-height) for the 420px target — see deep-prompts.component.ts's
+        // identical comment: min-height is a hard floor that can overflow page-col when the real
+        // available space is tighter than 420px, which is the "page is 20-40px too tall" bug.
+        flex: 1 1 420px;
+        min-height: 0;
         display: flex;
-        min-height: 420px;
+        overflow: hidden;
       }
 
       // The email-active view reuses the same .chat-bubble primitives chat-panel uses, so the

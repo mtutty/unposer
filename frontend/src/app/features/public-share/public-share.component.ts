@@ -95,8 +95,11 @@ interface DisplayMessage {
         padding: 1.5rem;
         display: flex;
         flex-direction: column;
-        flex: 1;
-        min-height: 420px;
+        // flex-basis (not min-height) for the 420px target — see logistics-step.component.ts's
+        // identical comment: min-height is a hard floor that can overflow the page when real
+        // available space is tighter than 420px.
+        flex: 1 1 420px;
+        min-height: 0;
         overflow: hidden;
       }
 
